@@ -490,8 +490,8 @@ impl eframe::App for App {
             }
 
             egui::ScrollArea::vertical().show(ui, |ui| {
-                let card_w = 160.0;
-                let card_h = 260.0;
+                let card_w = 150.0;
+                let card_h = 225.0;  // 2:3 poster aspect ratio
                 let spacing = 12.0;
                 let available_w = ui.available_width();
                 let cols = ((available_w / (card_w + spacing)) as usize).max(1);
@@ -554,8 +554,16 @@ impl eframe::App for App {
 // ── Card renderer ─────────────────────────────────────────────────────────────
 
 // Returns true if the card was clicked.
-// Allocates a fixed rect up front and draws everything manually via the painter
-// so that layout direction never affects where poster vs title end up.
+//
+// Visual states:
+//   Unwatched    — full color poster, neutral gray border
+//   In progress  — full color poster, amber border
+//   Watched      — dimmed poster (dark overlay), green border
+//   Selected     — gold border (overrides all other border colors)
+//
+// Title is shown as a bottom-scrim hover overlay.
+// When there is no poster image the title is always visible since there
+// is nothing to obscure.
 fn render_media_card(
     ui: &mut egui::Ui,
     title: &str,
@@ -567,79 +575,95 @@ fn render_media_card(
     card_w: f32,
     card_h: f32,
 ) -> bool {
-    let inner_margin = 4.0;
-    let content_w = card_w - inner_margin * 2.0;
-    // Reserve space for two lines of title text below the poster.
-    let poster_h = card_h - 40.0;
-
-    // Allocate the full card rect first — this is what drives layout position
-    // in the parent and gives us the click response without any overlay tricks.
+    // Title lives inside the poster as an overlay — no reserved space below.
     let (card_rect, card_response) = ui.allocate_exact_size(
         egui::vec2(card_w, card_h),
         egui::Sense::click(),
     );
 
-    if ui.is_rect_visible(card_rect) {
-        let border_color = if selected { egui::Color32::GOLD } else { egui::Color32::from_gray(60) };
-        let border_width = if selected { 2.0 } else { 1.0 };
+    if !ui.is_rect_visible(card_rect) {
+        return card_response.clicked();
+    }
 
-        let poster_rect = egui::Rect::from_min_size(
-            card_rect.min + egui::vec2(inner_margin, inner_margin),
-            egui::vec2(content_w, poster_h),
-        );
+    let hovered = card_response.hovered();
 
-        // Draw background and border first using a scoped painter borrow.
-        {
-            let painter = ui.painter();
-            painter.rect_filled(card_rect, egui::Rounding::same(6.0), egui::Color32::from_gray(30));
-            painter.rect_stroke(card_rect, egui::Rounding::same(6.0), egui::Stroke::new(border_width, border_color));
-        }
+    // Border color encodes watch state; selected (detail panel open) takes priority.
+    let (border_color, border_width) = if selected {
+        (egui::Color32::from_rgb(220, 180, 50), 2.5)   // gold
+    } else if watched {
+        (egui::Color32::from_rgb(55, 150, 55), 1.5)    // green
+    } else if in_progress {
+        (egui::Color32::from_rgb(190, 130, 35), 1.5)   // amber
+    } else {
+        (egui::Color32::from_gray(50), 1.0)             // neutral
+    };
 
-        // Poster image or fallback icon — child_ui requires &mut ui, so painter must not be alive.
-        if let Some(tex) = texture {
-            let mut child = ui.child_ui(poster_rect, egui::Layout::top_down(egui::Align::Center));
-            child.add(egui::Image::new(tex).fit_to_exact_size(poster_rect.size()));
+    let rounding = egui::Rounding::same(6.0);
+
+    // Background fill
+    ui.painter().rect_filled(card_rect, rounding, egui::Color32::from_gray(20));
+
+    let has_poster = texture.is_some();
+
+    // Poster image or fallback background
+    if let Some(tex) = texture {
+        let mut child = ui.child_ui(card_rect, egui::Layout::top_down(egui::Align::Center));
+        child.add(egui::Image::new(tex).fit_to_exact_size(card_rect.size()));
+    } else {
+        let (bg, label) = if is_movie {
+            (egui::Color32::from_rgb(30, 30, 65), "MOVIE")
         } else {
-            let (bg, icon) = if is_movie {
-                (egui::Color32::from_rgb(40, 40, 80), "MOVIE")
-            } else {
-                (egui::Color32::from_rgb(40, 60, 40), "SHOW")
-            };
-            ui.painter().rect_filled(poster_rect, 4.0, bg);
-            ui.painter().text(
-                poster_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                icon,
-                egui::FontId::proportional(48.0),
-                egui::Color32::WHITE,
-            );
-        }
-
-        // Watch status badge
-        let badge = if watched {
-            Some(("W", egui::Color32::from_rgb(80, 200, 80)))
-        } else if in_progress {
-            Some((">", egui::Color32::from_rgb(220, 200, 60)))
-        } else {
-            None
+            (egui::Color32::from_rgb(25, 50, 33), "SHOW")
         };
-        if let Some((glyph, color)) = badge {
-            ui.painter().text(
-                poster_rect.right_top() + egui::vec2(-4.0, 4.0),
-                egui::Align2::RIGHT_TOP,
-                glyph,
-                egui::FontId::proportional(14.0),
-                color,
-            );
-        }
-
-        // Title below the poster — another child_ui, each call is a fresh short-lived borrow.
-        let title_top = poster_rect.max.y + 4.0;
-        let title_rect = egui::Rect::from_min_size(
-            egui::pos2(card_rect.min.x + inner_margin, title_top),
-            egui::vec2(content_w, card_rect.max.y - title_top - inner_margin),
+        ui.painter().rect_filled(card_rect, rounding, bg);
+        ui.painter().text(
+            card_rect.center() - egui::vec2(0.0, 10.0),
+            egui::Align2::CENTER_CENTER,
+            label,
+            egui::FontId::proportional(16.0),
+            egui::Color32::from_gray(130),
         );
-        let mut title_ui = ui.child_ui(title_rect, egui::Layout::top_down(egui::Align::LEFT));
+    }
+
+    // Watched dim overlay — a semi-transparent dark layer over the poster.
+    // Keeps the image recognisable while signalling "done".
+    if watched {
+        ui.painter().rect_filled(
+            card_rect,
+            rounding,
+            egui::Color32::from_black_alpha(120),
+        );
+    }
+
+    // Hover title scrim — shown on hover, or always when there is no poster.
+    let show_title = hovered || !has_poster;
+    if show_title {
+        let scrim_h = 54.0;
+        let scrim_rect = egui::Rect::from_min_size(
+            egui::pos2(card_rect.min.x, card_rect.max.y - scrim_h),
+            egui::vec2(card_rect.width(), scrim_h),
+        );
+
+        // Dark scrim at the bottom
+        ui.painter().rect_filled(
+            scrim_rect,
+            egui::Rounding { nw: 0.0, ne: 0.0, sw: 6.0, se: 6.0 },
+            egui::Color32::from_black_alpha(185),
+        );
+        // Soft fade band at the top of the scrim to blend into the poster
+        let fade_rect = egui::Rect::from_min_size(
+            scrim_rect.min,
+            egui::vec2(scrim_rect.width(), 14.0),
+        );
+        ui.painter().rect_filled(
+            fade_rect,
+            egui::Rounding::ZERO,
+            egui::Color32::from_black_alpha(55),
+        );
+
+        // Title text
+        let text_rect = scrim_rect.shrink2(egui::vec2(6.0, 5.0));
+        let mut title_ui = ui.child_ui(text_rect, egui::Layout::bottom_up(egui::Align::LEFT));
         title_ui.add(
             egui::Label::new(
                 egui::RichText::new(title)
@@ -648,15 +672,17 @@ fn render_media_card(
             )
             .wrap(true),
         );
+    }
 
-        if card_response.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
+    // Re-draw border on top so it is never obscured by the poster or overlays.
+    ui.painter().rect_stroke(card_rect, rounding, egui::Stroke::new(border_width, border_color));
+
+    if hovered {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
 
     card_response.clicked()
 }
-
 
 // ── Detail panels ─────────────────────────────────────────────────────────────
 
