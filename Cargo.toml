@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "media_core",
+    "media_gui",
+]
+resolver = "2"

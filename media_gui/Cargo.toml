@@ -1,0 +1,21 @@
+[package]
+name = "media_gui"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mediavault"
+path = "src/main.rs"
+
+[dependencies]
+media_core = { path = "../media_core" }
+eframe = { version = "0.27", features = ["default", "persistence"] }
+egui = "0.27"
+# Load poster images into egui textures
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+# Spawn background threads for TMDB fetching without blocking the UI
+crossbeam-channel = "0.5"
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+# Native folder picker dialog
+rfd = "0.14"
