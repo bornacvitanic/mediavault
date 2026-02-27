@@ -47,6 +47,13 @@ impl MediaEntry {
         }
     }
 
+    pub fn metadata(&self) -> &MediaMetadata {
+        match self {
+            MediaEntry::Movie(m) => &m.metadata,
+            MediaEntry::Show(s) => &s.metadata,
+        }
+    }
+
     pub fn poster_cache_path(&self) -> &PathBuf {
         match self {
             MediaEntry::Movie(m) => &m.poster_path,
@@ -72,6 +79,8 @@ pub struct Movie {
     /// Uses `{video_stem}.media.poster.jpg` so root-level movies (which share
     /// a base_dir with other entries) never overwrite each other's posters.
     pub poster_path: PathBuf,
+    /// Metadata extracted from the raw filename at scan time.
+    pub metadata: MediaMetadata,
 }
 
 /// Persisted, human-editable state written to `movie.watched.toml`.
@@ -104,6 +113,8 @@ pub struct Show {
     pub bookmarks: ShowBookmarks,
     /// Path where the cached TMDB poster is stored: `{folder}.media.poster.jpg`.
     pub poster_path: PathBuf,
+    /// Metadata extracted from the folder name at scan time.
+    pub metadata: MediaMetadata,
 }
 
 impl Show {
@@ -196,4 +207,41 @@ impl ShowBookmarks {
 #[derive(Debug, Clone, Default)]
 pub struct Comments {
     pub markdown: String,
+}
+
+// ── Extracted file metadata ───────────────────────────────────────────────────
+
+/// Metadata extracted from a raw filename at scan time.
+/// Used to show tags on hover and in the detail panel.
+#[derive(Debug, Clone, Default)]
+pub struct MediaMetadata {
+    /// Clean human-readable title (noise stripped).
+    pub clean_title: String,
+    /// 4-digit year, if found in the filename.
+    pub year: Option<u32>,
+    /// Resolution string, e.g. "4K", "1080p", "720p".
+    pub resolution: Option<String>,
+    /// Source, e.g. "BluRay", "WEB-DL", "WEBRip".
+    pub source: Option<String>,
+    /// HDR format, e.g. "HDR", "HDR10", "DV".
+    pub hdr: Option<String>,
+    /// Codec, e.g. "x265", "x264", "HEVC".
+    pub codec: Option<String>,
+    /// Season number and display label, e.g. (1, "S1"). Present when the
+    /// folder name contains an explicit season indicator like S01 or "Season 2".
+    pub season: Option<(u32, String)>,
+}
+
+impl MediaMetadata {
+    /// Returns all present tags as short display strings, in a sensible order.
+    pub fn tags(&self) -> Vec<String> {
+        let mut tags = Vec::new();
+        if let Some((_n, label)) = &self.season { tags.push(label.clone()); }
+        if let Some(y) = self.year { tags.push(y.to_string()); }
+        if let Some(r) = &self.resolution { tags.push(r.clone()); }
+        if let Some(s) = &self.source { tags.push(s.clone()); }
+        if let Some(h) = &self.hdr { tags.push(h.clone()); }
+        if let Some(c) = &self.codec { tags.push(c.clone()); }
+        tags
+    }
 }

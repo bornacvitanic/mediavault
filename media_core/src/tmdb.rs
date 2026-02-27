@@ -105,9 +105,77 @@ fn is_year(tok: &str) -> bool {
         && tok.parse::<u32>().map(|y| (1900..=2100).contains(&y)).unwrap_or(false)
 }
 
+/// Returns true if `tok` is a season marker that should truncate the title
+/// for TMDB queries: "season", "saison", or bare S-number like "s01"/"s1".
+fn is_season_token(tok: &str) -> bool {
+    if tok == "season" || tok == "saison" { return true; }
+    if tok.len() >= 2 && tok.len() <= 4 && tok.starts_with('s') {
+        let rest = &tok[1..];
+        if rest.chars().all(|c| c.is_ascii_digit()) && rest.parse::<u32>().is_ok() {
+            return true;
+        }
+    }
+    false
+}
+
 fn is_size_token(tok: &str) -> bool {
     let t = tok.trim_end_matches("mb").trim_end_matches("gb");
     !t.is_empty() && t.chars().all(|c| c.is_ascii_digit())
+}
+
+/// Extract a season number from a raw string, returning (season_number, display_label).
+/// Recognises patterns like: S01, S1, Season 1, Season.1, s02, SAISON 2
+pub fn extract_season(raw: &str) -> Option<(u32, String)> {
+    let spaced = raw.replace(['.', '_'], " ");
+    let tokens: Vec<&str> = spaced.split_whitespace().collect();
+
+    for (i, tok) in tokens.iter().enumerate() {
+        let lo = tok.to_lowercase();
+
+        // "Season 2" or "Saison 2" — word followed by a number token
+        if lo == "season" || lo == "saison" || lo == "s" {
+            if let Some(next) = tokens.get(i + 1) {
+                let n = next.trim_matches(|c: char| !c.is_ascii_digit());
+                if !n.is_empty() {
+                    if let Ok(num) = n.parse::<u32>() {
+                        return Some((num, format!("S{num}")));
+                    }
+                }
+            }
+        }
+
+        // Bare "S01" / "S1" / "s02" token (not followed by E\d — that would be an episode tag)
+        if lo.starts_with('s') && lo.len() >= 2 && lo.len() <= 4 {
+            let rest = &lo[1..];
+            if rest.chars().all(|c| c.is_ascii_digit()) {
+                if let Ok(num) = rest.parse::<u32>() {
+                    // Make sure the next token is not an episode marker (E01)
+                    let next_is_ep = tokens.get(i + 1)
+                        .map(|t| t.to_lowercase().starts_with('e') && t.len() <= 4)
+                        .unwrap_or(false);
+                    if !next_is_ep {
+                        return Some((num, format!("S{num}")));
+                    }
+                }
+            }
+        }
+
+        // "S01E02" combined token — extract just the season part
+        if lo.len() >= 4 {
+            if let Some(e_pos) = lo.find('e') {
+                let s_part = &lo[..e_pos];
+                if s_part.starts_with('s') {
+                    let n = &s_part[1..];
+                    if n.chars().all(|c| c.is_ascii_digit()) {
+                        if let Ok(num) = n.parse::<u32>() {
+                            return Some((num, format!("S{num}")));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Strip all `[...]` bracket groups — handles anime-style tags like
@@ -202,6 +270,8 @@ pub fn clean_title(raw: &str) -> String {
             || is_size_token(clean)
             // Dash-prefixed release group names like `-BenT`, `-GalaxyRG`
             || (token.starts_with('-') && token.len() > 1)
+            // Season markers: "Season", "Saison", bare "S01"/"S1"
+            || is_season_token(clean)
         {
             break;
         }
@@ -305,4 +375,220 @@ pub fn fetch_poster(
     }
 
     Ok(false)
+}
+
+// ── Full metadata extraction ──────────────────────────────────────────────────
+
+/// Extract all bracket group contents from a string as a flat list of tokens.
+/// e.g. `"Title [BD][1080p][HEVC]"` -> `["BD", "1080p", "HEVC"]`
+fn bracket_tokens(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut depth = 0usize;
+    let mut current = String::new();
+    for ch in s.chars() {
+        match ch {
+            '[' | '(' => {
+                if depth == 0 { current.clear(); }
+                depth += 1;
+            }
+            ']' | ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 && !current.trim().is_empty() {
+                    // Tokenise the bracket contents and add each word
+                    for tok in current.split_whitespace() {
+                        let t = tok.replace(['.','_'], " ");
+                        for word in t.split_whitespace() {
+                            out.push(word.to_string());
+                        }
+                    }
+                    current.clear();
+                }
+            }
+            _ if depth > 0 => current.push(ch),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Scan a token list and fill in any missing metadata fields.
+/// This is the core extraction loop, shared by folder name and episode fallback paths.
+fn scan_tokens(
+    tokens: impl Iterator<Item = String>,
+    year: &mut Option<u32>,
+    resolution: &mut Option<String>,
+    source: &mut Option<String>,
+    hdr: &mut Option<String>,
+    codec: &mut Option<String>,
+) {
+    for token in tokens {
+        let lo = token.to_lowercase();
+        let clean = lo.trim_matches(|c: char| !c.is_alphanumeric());
+
+        if year.is_none() && is_year(clean) {
+            *year = clean.parse().ok();
+            continue;
+        }
+        if resolution.is_none() {
+            *resolution = match clean {
+                "2160p" | "4k" | "uhd" => Some("4K".into()),
+                "1080p" | "1080i" => Some("1080p".into()),
+                "720p" => Some("720p".into()),
+                "480p" | "576p" => Some("480p".into()),
+                _ => None,
+            };
+            if resolution.is_some() { continue; }
+        }
+        if source.is_none() {
+            *source = match clean {
+                "bluray" | "blu-ray" | "bdremux" | "remux" | "bdrip" | "bd" => Some("BluRay".into()),
+                "webrip" | "web-rip" => Some("WEBRip".into()),
+                "webdl" | "web-dl" | "web" => Some("WEB-DL".into()),
+                "hdtv" => Some("HDTV".into()),
+                "dvdrip" | "dvd" => Some("DVD".into()),
+                "hdrip" => Some("HDRip".into()),
+                _ => None,
+            };
+            if source.is_some() { continue; }
+        }
+        if hdr.is_none() {
+            *hdr = match clean {
+                "dv" | "dolbyvision" => Some("DV".into()),
+                "hdr10+" => Some("HDR10+".into()),
+                "hdr10" => Some("HDR10".into()),
+                "hdr" => Some("HDR".into()),
+                "hlg" => Some("HLG".into()),
+                _ => None,
+            };
+            if hdr.is_some() { continue; }
+        }
+        if codec.is_none() {
+            *codec = match clean {
+                "x265" | "h265" | "hevc" => Some("x265".into()),
+                "x264" | "h264" | "avc" => Some("x264".into()),
+                "av1" => Some("AV1".into()),
+                "xvid" | "divx" => Some("XviD".into()),
+                _ => None,
+            };
+        }
+    }
+}
+
+/// Normalise Unicode lookalike punctuation (Windows-safe substitutes) to ASCII.
+fn normalise_unicode(raw: &str) -> String {
+    raw.chars().map(|c| match c {
+        '\u{A789}' | '\u{FE13}' | '\u{FE55}' | '\u{FF1A}' => ':',
+        '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' | '\u{2014}' | '\u{2015}'
+        | '\u{FE58}' | '\u{FF0D}' => '-',
+        '\u{2018}' | '\u{2019}' | '\u{FF07}' => '\'',
+        _ => c,
+    }).collect()
+}
+
+/// Extract all useful metadata from a raw folder/filename.
+///
+/// Strategy:
+/// 1. Scan tokens *outside* brackets (dot/space separated) — catches `1080p` in
+///    `Show.1080p.BluRay` style names.
+/// 2. Scan tokens *inside* every bracket group — catches `[BD][1080p][HEVC 10bit x265]`
+///    style names common in anime releases.
+/// 3. Optionally, fall back to a list of episode filename stems when the folder
+///    name alone has no tags. Use `extract_metadata_with_episodes` for this.
+pub fn extract_metadata(raw: &str) -> crate::models::MediaMetadata {
+    extract_metadata_with_episodes(raw, &[])
+}
+
+/// Like `extract_metadata` but also consults `episode_stems` (bare filenames
+/// without extension) when the folder name yields no tags. Only the tokens that
+/// are *common to all* episode stems are used, to avoid picking up per-episode
+/// noise like episode numbers.
+pub fn extract_metadata_with_episodes(
+    raw: &str,
+    episode_stems: &[String],
+) -> crate::models::MediaMetadata {
+    use crate::models::MediaMetadata;
+
+    let normalized = normalise_unicode(raw);
+
+    let mut year: Option<u32> = None;
+    let mut resolution: Option<String> = None;
+    let mut source: Option<String> = None;
+    let mut hdr: Option<String> = None;
+    let mut codec: Option<String> = None;
+
+    // Pass 1: tokens outside brackets (dot/underscore → space)
+    let outside = strip_brackets(&normalized).replace(['.', '_'], " ");
+    scan_tokens(
+        outside.split_whitespace().map(|s| s.to_string()),
+        &mut year, &mut resolution, &mut source, &mut hdr, &mut codec,
+    );
+
+    // Pass 2: tokens inside bracket groups — covers [BD][1080p][HEVC 10bit x265]
+    scan_tokens(
+        bracket_tokens(&normalized).into_iter(),
+        &mut year, &mut resolution, &mut source, &mut hdr, &mut codec,
+    );
+
+    // Pass 3: episode filename fallback when folder gave us nothing useful.
+    // Find tokens that appear in ALL episode stems (i.e. are release-wide constants).
+    if (resolution.is_none() && source.is_none() && codec.is_none())
+        && !episode_stems.is_empty()
+    {
+        // Collect token sets for each episode stem (bracket contents + outer tokens)
+        let token_sets: Vec<std::collections::HashSet<String>> = episode_stems
+            .iter()
+            .map(|stem| {
+                let n = normalise_unicode(stem);
+                let mut set = std::collections::HashSet::new();
+                // outside tokens
+                for t in strip_brackets(&n).replace(['.','_']," ").split_whitespace() {
+                    set.insert(t.to_lowercase());
+                }
+                // bracket tokens
+                for t in bracket_tokens(&n) {
+                    set.insert(t.to_lowercase());
+                }
+                set
+            })
+            .collect();
+
+        // Intersection: tokens present in every episode
+        if let Some(first) = token_sets.first() {
+            let common: Vec<String> = first
+                .iter()
+                .filter(|t| token_sets.iter().all(|s| s.contains(*t)))
+                .cloned()
+                .collect();
+
+            scan_tokens(
+                common.into_iter(),
+                &mut year, &mut resolution, &mut source, &mut hdr, &mut codec,
+            );
+        }
+    }
+
+    // Year fallback: raw string scan (catches years inside brackets like `(2025)`)
+    if year.is_none() {
+        year = extract_year(raw);
+    }
+
+    let season = extract_season(raw);
+
+    let base = clean_title(raw);
+    let display_title = match &season {
+        Some((_n, label)) if !base.to_lowercase().contains(&label.to_lowercase()) => {
+            format!("{base} {label}")
+        }
+        _ => base,
+    };
+
+    MediaMetadata {
+        clean_title: display_title,
+        year,
+        resolution,
+        source,
+        hdr,
+        codec,
+        season,
+    }
 }

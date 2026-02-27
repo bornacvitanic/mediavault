@@ -9,6 +9,7 @@ use natord::compare as natural_compare;
 
 use crate::{
     models::{Episode, MediaEntry, Movie, Season, Show, VIDEO_EXTENSIONS},
+    tmdb::{extract_metadata, extract_metadata_with_episodes},
     sidecar::{load_movie_state, load_show_bookmarks},
 };
 
@@ -102,10 +103,10 @@ fn collect_videos_recursive(dir: &Path) -> Vec<PathBuf> {
 // ── Movie construction ────────────────────────────────────────────────────────
 
 fn movie_from_single_file(base_dir: &Path, video_path: &Path) -> Option<Movie> {
-    let title = stem_title(video_path);
+    let raw = stem_title(video_path);
+    let metadata = extract_metadata(&raw);
+    let title = raw.clone();
     let state = load_movie_state(base_dir).unwrap_or_default();
-    // Poster is named after the video stem so root-level movies in the same
-    // directory never share or overwrite each other's cached poster.
     let poster_path = base_dir.join(format!(
         "{}.media.poster.jpg",
         video_path.file_stem().unwrap_or_default().to_string_lossy()
@@ -117,6 +118,7 @@ fn movie_from_single_file(base_dir: &Path, video_path: &Path) -> Option<Movie> {
         video_path: video_path.to_path_buf(),
         state,
         poster_path,
+        metadata,
     })
 }
 
@@ -128,6 +130,16 @@ fn show_from_dir(dir: &Path) -> Option<Show> {
     if seasons.is_empty() {
         return None;
     }
+    // Collect bare filename stems from all episodes so extract_metadata_with_episodes
+    // can find tags common to all files when the folder name alone has none.
+    let episode_stems: Vec<String> = seasons
+        .iter()
+        .flat_map(|s| s.episodes.iter())
+        .filter_map(|ep| {
+            ep.video_path.file_stem().map(|s| s.to_string_lossy().into_owned())
+        })
+        .collect();
+    let metadata = extract_metadata_with_episodes(&title, &episode_stems);
     let bookmarks = load_show_bookmarks(dir).unwrap_or_default();
     let folder_stem = dir.file_name().unwrap_or_default().to_string_lossy();
     let poster_path = dir.join(format!("{folder_stem}.media.poster.jpg"));
@@ -137,6 +149,7 @@ fn show_from_dir(dir: &Path) -> Option<Show> {
         seasons,
         bookmarks,
         poster_path,
+        metadata,
     })
 }
 

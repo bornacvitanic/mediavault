@@ -104,6 +104,9 @@ struct App {
     /// don't re-spawn threads on every frame.
     poster_attempted: std::collections::HashSet<PathBuf>,
 
+    // Card zoom (1.0 = default size)
+    card_zoom: f32,
+
     // Config
     config: AppConfig,
     show_settings: bool,
@@ -136,6 +139,7 @@ impl App {
             poster_rx,
             poster_tx,
             poster_attempted: Default::default(),
+            card_zoom: 1.0,
             config,
             show_settings: false,
             api_key_buf,
@@ -370,6 +374,9 @@ impl eframe::App for App {
                     ui.selectable_value(&mut self.watch_filter, WatchFilter::Watched, "Watched");
                     ui.selectable_value(&mut self.watch_filter, WatchFilter::InProgress, "In Progress");
                     ui.separator();
+                    ui.label("Zoom:");
+                    ui.add(egui::Slider::new(&mut self.card_zoom, 0.5f32..=2.0).step_by(0.1).show_value(false));
+                    ui.separator();
                     ui.label("Sort:");
                     ui.selectable_value(&mut self.sort_by, SortBy::Title, "Title");
                     ui.selectable_value(&mut self.sort_by, SortBy::DateAdded, "Date Added");
@@ -490,20 +497,26 @@ impl eframe::App for App {
             }
 
             egui::ScrollArea::vertical().show(ui, |ui| {
-                let card_w = 150.0;
-                let card_h = 225.0;  // 2:3 poster aspect ratio
+                let card_w = 150.0 * self.card_zoom;
+                let card_h = 225.0 * self.card_zoom;  // 2:3 poster aspect ratio
                 let spacing = 12.0;
                 let available_w = ui.available_width();
                 let cols = ((available_w / (card_w + spacing)) as usize).max(1);
 
                 // Pre-collect card data to avoid mid-loop borrow conflicts.
-                let cards: Vec<(PathBuf, PathBuf, String, bool, bool, bool, bool)> = indices
+                let cards: Vec<(PathBuf, PathBuf, String, Vec<String>, Option<(usize,usize)>, bool, bool, bool, bool)> = indices
                     .iter()
                     .map(|&idx| {
                         let entry = &self.entries[idx];
                         let base_dir = entry.base_dir().clone();
                         let poster_path = entry.poster_cache_path().clone();
-                        let title = entry.title().to_string();
+                        let meta = entry.metadata();
+                        let title = if meta.clean_title.is_empty() { entry.title().to_string() } else { meta.clean_title.clone() };
+                        let tags = meta.tags();
+                        let progress = match entry {
+                            MediaEntry::Show(s) => Some((s.watched_count(), s.episode_count())),
+                            MediaEntry::Movie(_) => None,
+                        };
                         let is_movie = matches!(entry, MediaEntry::Movie(_));
                         let watched = is_watched(entry);
                         let in_progress = is_in_progress(entry);
@@ -511,18 +524,20 @@ impl eframe::App for App {
                             DetailPanel::Movie(p) | DetailPanel::Show(p) => *p == base_dir,
                             DetailPanel::None => false,
                         };
-                        (base_dir, poster_path, title, is_movie, watched, in_progress, selected)
+                        (base_dir, poster_path, title, tags, progress, is_movie, watched, in_progress, selected)
                     })
                     .collect();
 
                 for row_cards in cards.chunks(cols) {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing = egui::vec2(spacing, 0.0);
-                        for (base_dir, poster_path, title, is_movie, watched, in_progress, selected) in row_cards {
+                        for (base_dir, poster_path, title, tags, progress, is_movie, watched, in_progress, selected) in row_cards {
                             let texture = self.textures.get(poster_path).cloned();
                             let clicked = render_media_card(
                                 ui,
                                 title,
+                                tags,
+                                *progress,
                                 *is_movie,
                                 texture.as_ref(),
                                 *watched,
@@ -555,18 +570,25 @@ impl eframe::App for App {
 
 // Returns true if the card was clicked.
 //
-// Visual states:
-//   Unwatched    — full color poster, neutral gray border
-//   In progress  — full color poster, amber border
-//   Watched      — dimmed poster (dark overlay), green border
-//   Selected     — gold border (overrides all other border colors)
+// Visual states (via border color):
+//   Unwatched    — neutral gray border
+//   In progress  — amber border
+//   Watched      — green border + dark dim overlay on poster
+//   Selected     — gold border (overrides all)
 //
-// Title is shown as a bottom-scrim hover overlay.
-// When there is no poster image the title is always visible since there
-// is nothing to obscure.
+// On hover:
+//   - Border doubles in thickness
+//   - Full-card semi-transparent overlay appears with:
+//       - Clean title (center, large)
+//       - Metadata tag pills (year, resolution, source, HDR) below title
+//       - For shows: a slim progress bar at the very bottom
+//
+// When there is no poster the overlay is always shown (title always visible).
 fn render_media_card(
     ui: &mut egui::Ui,
     title: &str,
+    tags: &[String],
+    show_progress: Option<(usize, usize)>,  // (watched, total) for shows
     is_movie: bool,
     texture: Option<&TextureHandle>,
     watched: bool,
@@ -575,7 +597,6 @@ fn render_media_card(
     card_w: f32,
     card_h: f32,
 ) -> bool {
-    // Title lives inside the poster as an overlay — no reserved space below.
     let (card_rect, card_response) = ui.allocate_exact_size(
         egui::vec2(card_w, card_h),
         egui::Sense::click(),
@@ -587,25 +608,25 @@ fn render_media_card(
 
     let hovered = card_response.hovered();
 
-    // Border color encodes watch state; selected (detail panel open) takes priority.
-    let (border_color, border_width) = if selected {
-        (egui::Color32::from_rgb(220, 180, 50), 2.5)   // gold
+    let base_border_width: f32 = if selected { 2.5 } else { 1.0 };
+    let border_width = if hovered { base_border_width * 2.0 } else { base_border_width };
+    let border_color = if selected {
+        egui::Color32::from_rgb(220, 180, 50)
     } else if watched {
-        (egui::Color32::from_rgb(55, 150, 55), 1.5)    // green
+        egui::Color32::from_rgb(55, 150, 55)
     } else if in_progress {
-        (egui::Color32::from_rgb(190, 130, 35), 1.5)   // amber
+        egui::Color32::from_rgb(190, 130, 35)
     } else {
-        (egui::Color32::from_gray(50), 1.0)             // neutral
+        egui::Color32::from_gray(50)
     };
 
     let rounding = egui::Rounding::same(6.0);
-
-    // Background fill
-    ui.painter().rect_filled(card_rect, rounding, egui::Color32::from_gray(20));
-
     let has_poster = texture.is_some();
 
-    // Poster image or fallback background
+    // Background
+    ui.painter().rect_filled(card_rect, rounding, egui::Color32::from_gray(20));
+
+    // Poster or fallback
     if let Some(tex) = texture {
         let mut child = ui.child_ui(card_rect, egui::Layout::top_down(egui::Align::Center));
         child.add(egui::Image::new(tex).fit_to_exact_size(card_rect.size()));
@@ -625,8 +646,7 @@ fn render_media_card(
         );
     }
 
-    // Watched dim overlay — a semi-transparent dark layer over the poster.
-    // Keeps the image recognisable while signalling "done".
+    // Watched dim overlay
     if watched {
         ui.painter().rect_filled(
             card_rect,
@@ -635,46 +655,130 @@ fn render_media_card(
         );
     }
 
-    // Hover title scrim — shown on hover, or always when there is no poster.
-    let show_title = hovered || !has_poster;
-    if show_title {
-        let scrim_h = 54.0;
-        let scrim_rect = egui::Rect::from_min_size(
-            egui::pos2(card_rect.min.x, card_rect.max.y - scrim_h),
-            egui::vec2(card_rect.width(), scrim_h),
-        );
+    // Hover overlay — full card, or always-on when no poster
+    let show_overlay = hovered || !has_poster;
+    if show_overlay {
+        // Semi-transparent full-card overlay
+        if has_poster {
+            ui.painter().rect_filled(
+                card_rect,
+                rounding,
+                egui::Color32::from_black_alpha(165),
+            );
+        }
 
-        // Dark scrim at the bottom
-        ui.painter().rect_filled(
-            scrim_rect,
-            egui::Rounding { nw: 0.0, ne: 0.0, sw: 6.0, se: 6.0 },
-            egui::Color32::from_black_alpha(185),
-        );
-        // Soft fade band at the top of the scrim to blend into the poster
-        let fade_rect = egui::Rect::from_min_size(
-            scrim_rect.min,
-            egui::vec2(scrim_rect.width(), 14.0),
-        );
-        ui.painter().rect_filled(
-            fade_rect,
-            egui::Rounding::ZERO,
-            egui::Color32::from_black_alpha(55),
-        );
+        let pad = card_w * 0.07;
+        let center_x = card_rect.center().x;
 
-        // Title text
-        let text_rect = scrim_rect.shrink2(egui::vec2(6.0, 5.0));
-        let mut title_ui = ui.child_ui(text_rect, egui::Layout::bottom_up(egui::Align::LEFT));
+        // Clean title — centered, bold-ish, sized relative to card width
+        let title_font_size = (card_w * 0.095).clamp(10.0, 17.0);
+        // Wrap title manually: use a child_ui in the upper 60% of the card
+        let title_area = egui::Rect::from_min_size(
+            card_rect.min + egui::vec2(pad, card_h * 0.18),
+            egui::vec2(card_w - pad * 2.0, card_h * 0.45),
+        );
+        let mut title_ui = ui.child_ui(title_area, egui::Layout::top_down(egui::Align::Center));
+        // Use the clean title if available, else raw
+        let display_title = title; // caller passes clean title via metadata
         title_ui.add(
             egui::Label::new(
-                egui::RichText::new(title)
-                    .size(11.0)
-                    .color(egui::Color32::WHITE),
+                egui::RichText::new(display_title)
+                    .size(title_font_size)
+                    .color(egui::Color32::WHITE)
+                    .strong(),
             )
             .wrap(true),
         );
+
+        // Metadata tag pills — small rounded rects with text inside.
+        // Tags are drawn left-to-right, centered as a group. If the full row
+        // would exceed the card width we drop tags from the end (least important
+        // tags are last: codec is appended last in MediaMetadata::tags()).
+        if !tags.is_empty() {
+            let tag_y = card_rect.min.y + card_h * 0.68;
+            let tag_font = egui::FontId::proportional((card_w * 0.072).clamp(8.0, 11.0));
+            let tag_pill_h = tag_font.size + 6.0;
+            let tag_pad_x = 6.0;
+            let tag_gap = 4.0;
+            let max_row_w = card_w - pad * 2.0;
+
+            // Measure each tag and keep only as many as fit in one row.
+            let mut tag_widths: Vec<f32> = Vec::new();
+            let mut row_w = 0.0f32;
+            let mut fitting = 0usize;
+            for t in tags.iter() {
+                let tw = t.len() as f32 * tag_font.size * 0.6 + tag_pad_x * 2.0;
+                let needed = if fitting == 0 { tw } else { tw + tag_gap };
+                if row_w + needed > max_row_w { break; }
+                row_w += needed;
+                tag_widths.push(tw);
+                fitting += 1;
+            }
+
+            let visible_tags = &tags[..fitting];
+            let total_w: f32 = row_w;
+            let mut x = center_x - total_w / 2.0;
+
+            let tag_border = egui::Color32::from_white_alpha(120);
+            let tag_fg = egui::Color32::WHITE;
+
+            for (tag, tw) in visible_tags.iter().zip(tag_widths.iter()) {
+                let tag_rect = egui::Rect::from_min_size(
+                    egui::pos2(x, tag_y),
+                    egui::vec2(*tw, tag_pill_h),
+                );
+                ui.painter().rect_stroke(tag_rect, egui::Rounding::same(3.0), egui::Stroke::new(1.0, tag_border));
+                ui.painter().text(
+                    tag_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    tag.as_str(),
+                    tag_font.clone(),
+                    tag_fg,
+                );
+                x += tw + tag_gap;
+            }
+        }
+
+        // Show progress bar at the bottom of the overlay
+        if let Some((watched_eps, total_eps)) = show_progress {
+            if total_eps > 0 {
+                let bar_h = (card_h * 0.035).clamp(3.0, 6.0);
+                let bar_margin = pad;
+                let bar_rect = egui::Rect::from_min_size(
+                    egui::pos2(card_rect.min.x + bar_margin, card_rect.max.y - bar_h - 6.0),
+                    egui::vec2(card_w - bar_margin * 2.0, bar_h),
+                );
+                let fill_w = bar_rect.width() * (watched_eps as f32 / total_eps as f32);
+
+                // Track
+                ui.painter().rect_filled(bar_rect, egui::Rounding::same(bar_h / 2.0),
+                    egui::Color32::from_white_alpha(30));
+                // Fill
+                if fill_w > 0.0 {
+                    let fill_rect = egui::Rect::from_min_size(bar_rect.min, egui::vec2(fill_w, bar_h));
+                    let bar_color = if watched_eps == total_eps {
+                        egui::Color32::from_rgb(55, 150, 55)
+                    } else {
+                        egui::Color32::from_rgb(190, 130, 35)
+                    };
+                    ui.painter().rect_filled(fill_rect, egui::Rounding::same(bar_h / 2.0), bar_color);
+                }
+
+                // Fraction label e.g. "6/10"
+                let label = format!("{}/{}", watched_eps, total_eps);
+                let label_font = egui::FontId::proportional((card_w * 0.07).clamp(8.0, 10.5));
+                ui.painter().text(
+                    egui::pos2(card_rect.max.x - bar_margin, bar_rect.min.y - 3.0),
+                    egui::Align2::RIGHT_BOTTOM,
+                    label,
+                    label_font,
+                    egui::Color32::from_gray(180),
+                );
+            }
+        }
     }
 
-    // Re-draw border on top so it is never obscured by the poster or overlays.
+    // Border always drawn last so it sits on top of everything
     ui.painter().rect_stroke(card_rect, rounding, egui::Stroke::new(border_width, border_color));
 
     if hovered {
@@ -700,12 +804,24 @@ fn render_movie_detail(
         None => return,
     };
 
-    ui.heading(&movie.title);
-    ui.small(movie.video_path.to_string_lossy());
+    // Clean title (large) + raw filename + metadata tags
+    let clean = movie.metadata.clean_title.clone();
+    ui.heading(if clean.is_empty() { &movie.title } else { &clean });
+    ui.small(movie.video_path.file_name().unwrap_or_default().to_string_lossy());
+    ui.add_space(2.0);
+    // Metadata tags as small colored labels
+    let tags = movie.metadata.tags();
+    if !tags.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            for tag in &tags {
+                ui.label(egui::RichText::new(tag).size(10.0).color(egui::Color32::from_gray(170)));
+            }
+        });
+    }
     ui.separator();
 
     // Watch status
-    ui.label(if movie.state.watched { "Status: ✅ Watched" } else { "Status: ⬜ Unwatched" });
+    ui.label(if movie.state.watched { "Watched" } else { "Unwatched" });
     if let Some(last) = movie.state.watch_history.last() {
         ui.small(format!("Last watched: {}", last.watched_at.format("%Y-%m-%d")));
     }
@@ -761,10 +877,25 @@ fn render_show_detail(
         None => return,
     };
 
-    ui.heading(&show.title);
+    let clean = show.metadata.clean_title.clone();
+    ui.heading(if clean.is_empty() { &show.title } else { &clean });
+    ui.small(&show.title);
+    ui.add_space(2.0);
+    let tags = show.metadata.tags();
+    if !tags.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            for tag in &tags {
+                ui.label(egui::RichText::new(tag).size(10.0).color(egui::Color32::from_gray(170)));
+            }
+        });
+    }
     let watched = show.watched_count();
     let total = show.episode_count();
-    ui.label(format!("Progress: {}/{} episodes watched", watched, total));
+    // Progress bar in detail panel
+    let progress = if total > 0 { watched as f32 / total as f32 } else { 0.0 };
+    ui.add_space(4.0);
+    let bar_rect_response = ui.add(egui::ProgressBar::new(progress)
+        .text(format!("{}/{} episodes", watched, total)));
     ui.separator();
 
     // "Continue" button
