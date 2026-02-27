@@ -379,8 +379,62 @@ pub fn fetch_poster(
 
 // ── Full metadata extraction ──────────────────────────────────────────────────
 
-/// Extract all bracket group contents from a string as a flat list of tokens.
+/// Split a fused token like `BD1080p` into `["BD", "1080p"]` before scanning.
+///
+/// Preserves known compound tokens that should not be split:
+/// - `x265`, `x264`, `h265`, `h264` — codec identifiers
+/// - `S01E02` style — episode markers handled elsewhere
+/// - Plain resolutions like `1080p`, `720p` — already clean
+///
+/// Handles patterns like `BD1080p`, `WEB1080p`, `BD720p` by detecting an
+/// alpha prefix followed directly by a digit-then-p/i resolution suffix.
+fn expand_token(tok: &str) -> Vec<String> {
+    // x265/x264/h265/h264 — keep intact
+    if tok.len() == 4 {
+        let lo = tok.to_lowercase();
+        if (lo.starts_with('x') || lo.starts_with('h'))
+            && lo[1..].chars().all(|c| c.is_ascii_digit())
+        {
+            return vec![tok.to_string()];
+        }
+    }
+    // S01E02 style — keep intact
+    if tok.len() >= 4 {
+        let lo = tok.to_lowercase();
+        let mut chars = lo.chars();
+        if chars.next() == Some('s') {
+            let rest: String = chars.collect();
+            if rest.contains('e') {
+                return vec![tok.to_string()];
+            }
+        }
+    }
+    // Alpha prefix + digit resolution suffix: BD1080p, WEB720p, etc.
+    // Match: one or more letters, then 3-4 digits, then 'p' or 'i'
+    let bytes = tok.as_bytes();
+    if let Some(digit_start) = bytes.iter().position(|b| b.is_ascii_digit()) {
+        if digit_start > 0 {
+            let prefix = &tok[..digit_start];
+            let suffix = &tok[digit_start..];
+            // Check suffix is a resolution: 3-4 digits + p/i
+            let suffix_lo = suffix.to_lowercase();
+            let digits: String = suffix_lo.chars().take_while(|c| c.is_ascii_digit()).collect();
+            let rest: String = suffix_lo.chars().skip_while(|c| c.is_ascii_digit()).collect();
+            if (digits.len() == 3 || digits.len() == 4)
+                && (rest == "p" || rest == "i" || rest.is_empty())
+            {
+                let res = format!("{}{}", digits, if rest.is_empty() { "p" } else { &rest });
+                return vec![prefix.to_string(), res];
+            }
+        }
+    }
+    vec![tok.to_string()]
+}
+
+/// Extract all bracket group contents from a string as a flat list of tokens,
+/// with fused tokens like `BD1080p` split into their components.
 /// e.g. `"Title [BD][1080p][HEVC]"` -> `["BD", "1080p", "HEVC"]`
+/// e.g. `"[DB]Title [BD1080p][x265]"` -> `["DB", "BD", "1080p", "x265"]`
 fn bracket_tokens(s: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut depth = 0usize;
@@ -394,11 +448,12 @@ fn bracket_tokens(s: &str) -> Vec<String> {
             ']' | ')' => {
                 depth = depth.saturating_sub(1);
                 if depth == 0 && !current.trim().is_empty() {
-                    // Tokenise the bracket contents and add each word
                     for tok in current.split_whitespace() {
                         let t = tok.replace(['.','_'], " ");
                         for word in t.split_whitespace() {
-                            out.push(word.to_string());
+                            for part in expand_token(word) {
+                                out.push(part);
+                            }
                         }
                     }
                     current.clear();
@@ -516,10 +571,11 @@ pub fn extract_metadata_with_episodes(
     let mut hdr: Option<String> = None;
     let mut codec: Option<String> = None;
 
-    // Pass 1: tokens outside brackets (dot/underscore → space)
+    // Pass 1: tokens outside brackets (dot/underscore → space), with fused
+    // token expansion so e.g. `BD1080p` outside brackets also gets split.
     let outside = strip_brackets(&normalized).replace(['.', '_'], " ");
     scan_tokens(
-        outside.split_whitespace().map(|s| s.to_string()),
+        outside.split_whitespace().flat_map(|s| expand_token(s)),
         &mut year, &mut resolution, &mut source, &mut hdr, &mut codec,
     );
 
@@ -540,11 +596,13 @@ pub fn extract_metadata_with_episodes(
             .map(|stem| {
                 let n = normalise_unicode(stem);
                 let mut set = std::collections::HashSet::new();
-                // outside tokens
+                // outside tokens (with fused expansion)
                 for t in strip_brackets(&n).replace(['.','_']," ").split_whitespace() {
-                    set.insert(t.to_lowercase());
+                    for part in expand_token(t) {
+                        set.insert(part.to_lowercase());
+                    }
                 }
-                // bracket tokens
+                // bracket tokens (already expanded inside bracket_tokens)
                 for t in bracket_tokens(&n) {
                     set.insert(t.to_lowercase());
                 }
