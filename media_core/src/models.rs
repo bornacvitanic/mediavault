@@ -151,12 +151,34 @@ pub struct Season {
 
 #[derive(Debug, Clone)]
 pub struct Episode {
+    /// Raw filename stem (fallback display if parsing fails).
     pub title: String,
+    /// Season number extracted from filename, e.g. 1 for S01.
+    pub season_num: u32,
+    /// Episode number extracted from filename, e.g. 4 for E04.
+    pub episode_num: u32,
+    /// Human-readable episode title extracted from filename, if present.
+    pub episode_title: Option<String>,
     pub video_path: PathBuf,
     pub video_mtime: Option<DateTime<Utc>>,
     /// Path relative to `Show::base_dir`, used as the stable bookmark key so
     /// that renaming the root library dir doesn't invalidate bookmarks.
     pub relative_path: String,
+}
+
+impl Episode {
+    /// Best display label: "S01E04 · Title" or "S01E04" or raw title.
+    pub fn display_label(&self) -> String {
+        if self.episode_num > 0 {
+            let code = format!("S{:02}E{:02}", self.season_num, self.episode_num);
+            match &self.episode_title {
+                Some(t) if !t.is_empty() => format!("{code}  {t}"),
+                _ => code,
+            }
+        } else {
+            self.title.clone()
+        }
+    }
 }
 
 /// Persisted, human-editable state written to `show.bookmarks.toml`.

@@ -72,6 +72,8 @@ enum WatchFilter {
 
 enum DetailPanel {
     None,
+    // Keyed on poster_path (unique per entry) rather than base_dir, because
+    // root-level movies share a base_dir and would all match simultaneously.
     Movie(PathBuf),
     Show(PathBuf),
 }
@@ -276,7 +278,13 @@ impl App {
             return;
         }
         let base_dir = match &self.detail {
-            DetailPanel::Movie(p) | DetailPanel::Show(p) => p.clone(),
+            DetailPanel::Movie(p) | DetailPanel::Show(p) => {
+                // poster_path is the key; resolve back to base_dir for sidecar ops
+                self.entries.iter()
+                    .find(|e| e.poster_cache_path() == p)
+                    .map(|e| e.base_dir().clone())
+                    .unwrap_or_else(|| p.clone())
+            }
             DetailPanel::None => return,
         };
         let comments = Comments { markdown: self.comment_buf.clone() };
@@ -395,8 +403,16 @@ impl eframe::App for App {
         // ── Detail panel (right side) ─────────────────────────────────────────
         let has_detail = !matches!(self.detail, DetailPanel::None);
         if has_detail {
-            let detail_base = match &self.detail {
-                DetailPanel::Movie(p) | DetailPanel::Show(p) => p.clone(),
+            // DetailPanel is keyed on poster_path; resolve to base_dir for detail fns.
+            let (detail_base, detail_is_movie) = match &self.detail {
+                DetailPanel::Movie(poster) | DetailPanel::Show(poster) => {
+                    let is_movie = matches!(self.detail, DetailPanel::Movie(_));
+                    let base = self.entries.iter()
+                        .find(|e| e.poster_cache_path() == poster)
+                        .map(|e| e.base_dir().clone())
+                        .unwrap_or_else(|| poster.clone());
+                    (base, is_movie)
+                }
                 DetailPanel::None => unreachable!(),
             };
 
@@ -412,18 +428,10 @@ impl eframe::App for App {
                         }
                         ui.separator();
 
-                        match detail_base {
-                            ref p if self.entries.iter().any(|e| {
-                                matches!(e, MediaEntry::Movie(m) if m.base_dir == *p)
-                            }) => {
-                                render_movie_detail(ui, &detail_base, &mut self.entries, &mut self.comment_buf, &mut self.comment_dirty);
-                            }
-                            ref p if self.entries.iter().any(|e| {
-                                matches!(e, MediaEntry::Show(s) if s.base_dir == *p)
-                            }) => {
-                                render_show_detail(ui, &detail_base, &mut self.entries, &mut self.comment_buf, &mut self.comment_dirty);
-                            }
-                            _ => {}
+                        if detail_is_movie {
+                            render_movie_detail(ui, &detail_base, &mut self.entries, &self.textures, &mut self.comment_buf, &mut self.comment_dirty);
+                        } else {
+                            render_show_detail(ui, &detail_base, &mut self.entries, &self.textures, &mut self.comment_buf, &mut self.comment_dirty);
                         }
                     });
                 });
@@ -521,7 +529,7 @@ impl eframe::App for App {
                         let watched = is_watched(entry);
                         let in_progress = is_in_progress(entry);
                         let selected = match &self.detail {
-                            DetailPanel::Movie(p) | DetailPanel::Show(p) => *p == base_dir,
+                            DetailPanel::Movie(p) | DetailPanel::Show(p) => *p == poster_path,
                             DetailPanel::None => false,
                         };
                         (base_dir, poster_path, title, tags, progress, is_movie, watched, in_progress, selected)
@@ -552,9 +560,9 @@ impl eframe::App for App {
                                 self.comment_buf = comments.markdown;
                                 self.comment_dirty = false;
                                 self.detail = if *is_movie {
-                                    DetailPanel::Movie(base_dir.clone())
+                                    DetailPanel::Movie(poster_path.clone())
                                 } else {
-                                    DetailPanel::Show(base_dir.clone())
+                                    DetailPanel::Show(poster_path.clone())
                                 };
                             }
                         }
@@ -670,72 +678,128 @@ fn render_media_card(
         let pad = card_w * 0.07;
         let center_x = card_rect.center().x;
 
-        // Clean title — centered, bold-ish, sized relative to card width
+        // Title — wrapped, clipped strictly to card bounds.
+        // Uses a child_ui with painting disabled for interaction so hover
+        // events pass through to the card response rect (no flicker).
         let title_font_size = (card_w * 0.095).clamp(10.0, 17.0);
-        // Wrap title manually: use a child_ui in the upper 60% of the card
         let title_area = egui::Rect::from_min_size(
-            card_rect.min + egui::vec2(pad, card_h * 0.18),
-            egui::vec2(card_w - pad * 2.0, card_h * 0.45),
+            card_rect.min + egui::vec2(pad, card_h * 0.12),
+            egui::vec2(card_w - pad * 2.0, card_h * 0.48),
         );
-        let mut title_ui = ui.child_ui(title_area, egui::Layout::top_down(egui::Align::Center));
-        // Use the clean title if available, else raw
-        let display_title = title; // caller passes clean title via metadata
-        title_ui.add(
-            egui::Label::new(
-                egui::RichText::new(display_title)
-                    .size(title_font_size)
-                    .color(egui::Color32::WHITE)
-                    .strong(),
-            )
-            .wrap(true),
-        );
+        // clip_rect ensures text never bleeds outside the card even when the
+        // font is large and the title is long.
+        // Draw title via painter (same approach as tag pills) — completely
+        // avoids the egui widget style system which was dimming the text color.
+        // Manual word-wrap: split into lines that fit within title_area width.
+        {
+            let max_w = title_area.width();
+            // Approximate char width for the chosen font size
+            let char_w = title_font_size * 0.55;
+            let chars_per_line = ((max_w / char_w) as usize).max(1);
+            let words: Vec<&str> = title.split_whitespace().collect();
+            let mut lines: Vec<String> = Vec::new();
+            let mut current = String::new();
+            for word in &words {
+                let candidate = if current.is_empty() {
+                    word.to_string()
+                } else {
+                    format!("{current} {word}")
+                };
+                if candidate.len() <= chars_per_line {
+                    current = candidate;
+                } else {
+                    if !current.is_empty() { lines.push(current.clone()); }
+                    current = word.to_string();
+                }
+            }
+            if !current.is_empty() { lines.push(current); }
+            // Clamp to 3 lines max, truncate last with ellipsis if needed
+            if lines.len() > 3 {
+                lines.truncate(3);
+                if let Some(last) = lines.last_mut() {
+                    last.truncate(last.len().saturating_sub(1));
+                    last.push('…');
+                }
+            }
+            let line_h = title_font_size * 1.25;
+            let block_h = lines.len() as f32 * line_h;
+            let mut y = title_area.center().y - block_h / 2.0 + line_h / 2.0;
+            for line in &lines {
+                ui.painter().text(
+                    egui::pos2(title_area.center().x, y),
+                    egui::Align2::CENTER_CENTER,
+                    line.as_str(),
+                    egui::FontId::proportional(title_font_size),
+                    egui::Color32::WHITE,
+                );
+                y += line_h;
+            }
+        }
 
-        // Metadata tag pills — small rounded rects with text inside.
-        // Tags are drawn left-to-right, centered as a group. If the full row
-        // would exceed the card width we drop tags from the end (least important
-        // tags are last: codec is appended last in MediaMetadata::tags()).
+        // Tag pills — flow layout: fill a row then start the next, up to 2 rows.
+        // Tags are never truncated; they wrap instead.
         if !tags.is_empty() {
-            let tag_y = card_rect.min.y + card_h * 0.68;
             let tag_font = egui::FontId::proportional((card_w * 0.072).clamp(8.0, 11.0));
             let tag_pill_h = tag_font.size + 6.0;
             let tag_pad_x = 6.0;
             let tag_gap = 4.0;
+            let row_gap = 4.0;
             let max_row_w = card_w - pad * 2.0;
+            let max_rows = 2usize;
 
-            // Measure each tag and keep only as many as fit in one row.
-            let mut tag_widths: Vec<f32> = Vec::new();
-            let mut row_w = 0.0f32;
-            let mut fitting = 0usize;
-            for t in tags.iter() {
-                let tw = t.len() as f32 * tag_font.size * 0.6 + tag_pad_x * 2.0;
-                let needed = if fitting == 0 { tw } else { tw + tag_gap };
-                if row_w + needed > max_row_w { break; }
-                row_w += needed;
-                tag_widths.push(tw);
-                fitting += 1;
+            // Measure all tag widths upfront.
+            let tag_widths: Vec<f32> = tags.iter()
+                .map(|t| t.len() as f32 * tag_font.size * 0.6 + tag_pad_x * 2.0)
+                .collect();
+
+            // Split into rows, each row center-aligned.
+            let mut rows: Vec<Vec<(usize, f32)>> = Vec::new();  // (tag_index, width)
+            let mut current_row: Vec<(usize, f32)> = Vec::new();
+            let mut current_w = 0.0f32;
+            for (i, &tw) in tag_widths.iter().enumerate() {
+                if rows.len() >= max_rows { break; }
+                let needed = if current_row.is_empty() { tw } else { tw + tag_gap };
+                if !current_row.is_empty() && current_w + needed > max_row_w {
+                    rows.push(std::mem::take(&mut current_row));
+                    current_w = 0.0;
+                    if rows.len() >= max_rows { break; }
+                }
+                current_row.push((i, tw));
+                current_w += if current_w == 0.0 { tw } else { tw + tag_gap };
+            }
+            if !current_row.is_empty() && rows.len() < max_rows {
+                rows.push(current_row);
             }
 
-            let visible_tags = &tags[..fitting];
-            let total_w: f32 = row_w;
-            let mut x = center_x - total_w / 2.0;
+            let total_tag_h = rows.len() as f32 * tag_pill_h + (rows.len() - 1).max(0) as f32 * row_gap;
+            // Position tag block in the lower-middle of the overlay, above the progress bar.
+            let tags_top = card_rect.min.y + card_h * 0.65 - total_tag_h / 2.0;
 
             let tag_border = egui::Color32::from_white_alpha(120);
             let tag_fg = egui::Color32::WHITE;
 
-            for (tag, tw) in visible_tags.iter().zip(tag_widths.iter()) {
-                let tag_rect = egui::Rect::from_min_size(
-                    egui::pos2(x, tag_y),
-                    egui::vec2(*tw, tag_pill_h),
-                );
-                ui.painter().rect_stroke(tag_rect, egui::Rounding::same(3.0), egui::Stroke::new(1.0, tag_border));
-                ui.painter().text(
-                    tag_rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    tag.as_str(),
-                    tag_font.clone(),
-                    tag_fg,
-                );
-                x += tw + tag_gap;
+            for (row_idx, row) in rows.iter().enumerate() {
+                let row_w: f32 = row.iter().map(|(_, tw)| tw).sum::<f32>()
+                    + tag_gap * (row.len().saturating_sub(1)) as f32;
+                let mut x = center_x - row_w / 2.0;
+                let y = tags_top + row_idx as f32 * (tag_pill_h + row_gap);
+
+                for (tag_idx, tw) in row {
+                    let tag_rect = egui::Rect::from_min_size(
+                        egui::pos2(x, y),
+                        egui::vec2(*tw, tag_pill_h),
+                    );
+                    ui.painter().rect_stroke(tag_rect, egui::Rounding::same(3.0),
+                        egui::Stroke::new(1.0, tag_border));
+                    ui.painter().text(
+                        tag_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        tags[*tag_idx].as_str(),
+                        tag_font.clone(),
+                        tag_fg,
+                    );
+                    x += tw + tag_gap;
+                }
             }
         }
 
@@ -794,6 +858,7 @@ fn render_movie_detail(
     ui: &mut egui::Ui,
     base_dir: &Path,
     entries: &mut Vec<MediaEntry>,
+    textures: &HashMap<PathBuf, TextureHandle>,
     comment_buf: &mut String,
     comment_dirty: &mut bool,
 ) {
@@ -804,58 +869,64 @@ fn render_movie_detail(
         None => return,
     };
 
-    // Clean title (large) + raw filename + metadata tags
+    // ── Header: poster + title ────────────────────────────────────────────────
+    let poster_key = movie.poster_path.clone();
     let clean = movie.metadata.clean_title.clone();
-    ui.heading(if clean.is_empty() { &movie.title } else { &clean });
-    ui.small(movie.video_path.file_name().unwrap_or_default().to_string_lossy());
-    ui.add_space(2.0);
-    // Metadata tags as small colored labels
+    let heading = if clean.is_empty() { movie.title.clone() } else { clean };
     let tags = movie.metadata.tags();
-    if !tags.is_empty() {
-        ui.horizontal_wrapped(|ui| {
-            for tag in &tags {
-                ui.label(egui::RichText::new(tag).size(10.0).color(egui::Color32::from_gray(170)));
+    let video_path = movie.video_path.clone();
+    let poster_tex = textures.get(&poster_key).cloned();
+
+    ui.horizontal(|ui| {
+        if let Some(tex) = &poster_tex {
+            ui.add(egui::Image::new(tex).max_size(egui::vec2(80.0, 120.0)).rounding(4.0));
+        }
+        ui.vertical(|ui| {
+            ui.heading(&heading);
+            ui.label(egui::RichText::new(
+                video_path.file_name().unwrap_or_default().to_string_lossy())
+                .size(10.0).color(egui::Color32::from_gray(130)));
+            if !tags.is_empty() {
+                ui.horizontal_wrapped(|ui| {
+                    for tag in &tags {
+                        ui.label(egui::RichText::new(tag).size(10.0)
+                            .color(egui::Color32::from_gray(160)));
+                    }
+                });
             }
         });
-    }
-    ui.separator();
-
-    // Watch status
-    ui.label(if movie.state.watched { "Watched" } else { "Unwatched" });
-    if let Some(last) = movie.state.watch_history.last() {
-        ui.small(format!("Last watched: {}", last.watched_at.format("%Y-%m-%d")));
-    }
-    ui.add_space(4.0);
-
-    if ui.button("Open in Player").clicked() {
-        open_in_player(&movie.video_path);
-    }
-    ui.add_space(4.0);
-
-    if movie.state.watched {
-        if ui.button("Log another watch").clicked() {
-            movie.state.watch_history.push(WatchEvent { watched_at: Utc::now(), note: None });
-            let _ = save_movie_state(&movie.base_dir, &movie.state);
-        }
-        if ui.button("Mark as Unwatched").clicked() {
-            movie.state.watched = false;
-            let _ = save_movie_state(&movie.base_dir, &movie.state);
-        }
-    } else {
-        if ui.button("Mark as Watched").clicked() {
-            movie.state.watched = true;
-            movie.state.watch_history.push(WatchEvent { watched_at: Utc::now(), note: None });
-            let _ = save_movie_state(&movie.base_dir, &movie.state);
-        }
-    }
+    });
 
     ui.separator();
-    ui.label("Watch history:");
-    if movie.state.watch_history.is_empty() {
-        ui.small("— none yet —");
-    } else {
-        for event in &movie.state.watch_history {
-            ui.small(format!("• {}", event.watched_at.format("%Y-%m-%d %H:%M")));
+
+    // ── Actions ───────────────────────────────────────────────────────────────
+    ui.horizontal(|ui| {
+        if ui.button("Open in Player").clicked() {
+            open_in_player(&movie.video_path);
+        }
+        if movie.state.watched {
+            if ui.button("Mark Unwatched").clicked() {
+                movie.state.watched = false;
+                let _ = save_movie_state(&movie.base_dir, &movie.state);
+            }
+            if ui.button("Log rewatch").clicked() {
+                movie.state.watch_history.push(WatchEvent { watched_at: Utc::now(), note: None });
+                let _ = save_movie_state(&movie.base_dir, &movie.state);
+            }
+        } else {
+            if ui.button("Mark Watched").clicked() {
+                movie.state.watched = true;
+                movie.state.watch_history.push(WatchEvent { watched_at: Utc::now(), note: None });
+                let _ = save_movie_state(&movie.base_dir, &movie.state);
+            }
+        }
+    });
+
+    if !movie.state.watch_history.is_empty() {
+        ui.add_space(2.0);
+        for event in movie.state.watch_history.iter().rev().take(5) {
+            ui.label(egui::RichText::new(format!("  Watched {}", event.watched_at.format("%Y-%m-%d")))
+                .size(11.0).color(egui::Color32::from_gray(140)));
         }
     }
 
@@ -867,151 +938,200 @@ fn render_show_detail(
     ui: &mut egui::Ui,
     base_dir: &Path,
     entries: &mut Vec<MediaEntry>,
+    textures: &HashMap<PathBuf, TextureHandle>,
     comment_buf: &mut String,
     comment_dirty: &mut bool,
 ) {
-    let show = match entries.iter_mut().find_map(|e| {
-        if let MediaEntry::Show(s) = e { if s.base_dir == base_dir { Some(s) } else { None } } else { None }
-    }) {
-        Some(s) => s,
-        None => return,
+    // ── Collect display data (immutable borrow) ───────────────────────────────
+    let (poster_key, heading, tags, watched_count, total, next_path, seasons_data) = {
+        let show = match entries.iter().find_map(|e| {
+            if let MediaEntry::Show(s) = e { if s.base_dir == base_dir { Some(s) } else { None } } else { None }
+        }) {
+            Some(s) => s,
+            None => return,
+        };
+        let clean = show.metadata.clean_title.clone();
+        let heading = if clean.is_empty() { show.title.clone() } else { clean };
+        let next = show.bookmarks.next_up.clone().or_else(|| {
+            show.all_episodes()
+                .find(|ep| !show.bookmarks.is_watched(&ep.relative_path))
+                .map(|ep| ep.relative_path.clone())
+        });
+        // Collect season/episode data for rendering
+        let seasons_data: Vec<(String, Vec<(String, String, Option<String>, bool, bool, PathBuf)>)> =
+            show.seasons.iter().map(|s| {
+                let eps = s.episodes.iter().map(|ep| (
+                    ep.relative_path.clone(),
+                    ep.display_label(),
+                    ep.episode_title.clone(),
+                    show.bookmarks.is_watched(&ep.relative_path),
+                    show.bookmarks.next_up.as_deref() == Some(&ep.relative_path),
+                    ep.video_path.clone(),
+                )).collect();
+                (s.label.clone(), eps)
+            }).collect();
+        (
+            show.poster_path.clone(),
+            heading,
+            show.metadata.tags(),
+            show.watched_count(),
+            show.episode_count(),
+            next,
+            seasons_data,
+        )
     };
 
-    let clean = show.metadata.clean_title.clone();
-    ui.heading(if clean.is_empty() { &show.title } else { &clean });
-    ui.small(&show.title);
-    ui.add_space(2.0);
-    let tags = show.metadata.tags();
-    if !tags.is_empty() {
-        ui.horizontal_wrapped(|ui| {
-            for tag in &tags {
-                ui.label(egui::RichText::new(tag).size(10.0).color(egui::Color32::from_gray(170)));
-            }
-        });
-    }
-    let watched = show.watched_count();
-    let total = show.episode_count();
-    // Progress bar in detail panel
-    let progress = if total > 0 { watched as f32 / total as f32 } else { 0.0 };
-    ui.add_space(4.0);
-    let bar_rect_response = ui.add(egui::ProgressBar::new(progress)
-        .text(format!("{}/{} episodes", watched, total)));
-    ui.separator();
+    let poster_tex = textures.get(&poster_key).cloned();
 
-    // "Continue" button
-    let next_up = show.bookmarks.next_up.clone().or_else(|| {
-        // Default next_up: first unwatched episode
-        show.all_episodes()
-            .find(|ep| !show.bookmarks.is_watched(&ep.relative_path))
-            .map(|ep| ep.relative_path.clone())
-    });
-
-    if let Some(ref rel) = next_up {
-        let ep_title = show
-            .all_episodes()
-            .find(|ep| ep.relative_path == *rel)
-            .map(|ep| ep.title.clone())
-            .unwrap_or_else(|| rel.clone());
-
-        if ui.button(format!("Continue: {}", ep_title)).clicked() {
-            let video_path = show
-                .all_episodes()
-                .find(|ep| ep.relative_path == *rel)
-                .map(|ep| ep.video_path.clone());
-            if let Some(p) = video_path {
-                open_in_player(&p);
-            }
-        }
-    }
-
-    ui.add_space(4.0);
-
-    // Mark all / unmark all
+    // ── Header ────────────────────────────────────────────────────────────────
     ui.horizontal(|ui| {
-        if ui.button("Mark all watched").clicked() {
-            let all: Vec<(String, Option<String>)> = {
-                let eps: Vec<_> = show.all_episodes().collect();
-                let rels: Vec<String> = eps.iter().map(|e| e.relative_path.clone()).collect();
-                let mut pairs = Vec::new();
-                for (i, r) in rels.iter().enumerate() {
-                    let following = rels.get(i + 1).map(|s| s.as_str());
-                    pairs.push((r.clone(), following.map(str::to_string)));
-                }
-                pairs
-            };
-            for (rel, _) in &all {
-                if !show.bookmarks.is_watched(rel) {
-                    show.bookmarks.watched_episodes.push(rel.clone());
-                }
-            }
-            show.bookmarks.next_up = None;
-            let _ = save_show_bookmarks(&show.base_dir, &show.bookmarks);
+        if let Some(tex) = &poster_tex {
+            ui.add(egui::Image::new(tex).max_size(egui::vec2(80.0, 120.0)).rounding(4.0));
         }
-        if ui.button("Clear all").clicked() {
-            show.bookmarks.watched_episodes.clear();
-            show.bookmarks.next_up = None;
-            let _ = save_show_bookmarks(&show.base_dir, &show.bookmarks);
-        }
-    });
-
-    ui.separator();
-
-    // Episode list grouped by season
-    let seasons: Vec<_> = show.seasons.iter().map(|s| {
-        let label = s.label.clone();
-        let eps: Vec<_> = s.episodes.iter().map(|ep| {
-            (ep.title.clone(), ep.relative_path.clone(), ep.video_path.clone())
-        }).collect();
-        (label, eps)
-    }).collect();
-    let bookmarks = show.bookmarks.clone();
-    let base = show.base_dir.clone();
-
-    // flatten for "following episode" look-up
-    let flat_rels: Vec<String> = show
-        .all_episodes()
-        .map(|ep| ep.relative_path.clone())
-        .collect();
-
-    for (season_label, episodes) in &seasons {
-        ui.collapsing(season_label, |ui| {
-            for (ep_title, rel, video_path) in episodes {
-                let watched = bookmarks.is_watched(rel);
-                let is_next = bookmarks.next_up.as_deref() == Some(rel.as_str());
-
-                ui.horizontal(|ui| {
-                    let check_label = if watched { "[W]" } else { "[ ]" };
-                    if ui.small_button(check_label).clicked() {
-                        // Toggle watch state — re-borrow mutably here.
-                        // We must find the show again since we moved out of it above.
-                        if let Some(s) = entries.iter_mut().find_map(|e| {
-                            if let MediaEntry::Show(s) = e { if s.base_dir == base { Some(s) } else { None } } else { None }
-                        }) {
-                            if watched {
-                                s.bookmarks.mark_unwatched(rel);
-                            } else {
-                                let idx = flat_rels.iter().position(|r| r == rel);
-                                let following = idx.and_then(|i| flat_rels.get(i + 1)).map(String::as_str);
-                                s.bookmarks.mark_watched(rel, following);
-                            }
-                            let _ = save_show_bookmarks(&s.base_dir, &s.bookmarks);
-                        }
-                    }
-
-                    let mut label_text = egui::RichText::new(ep_title);
-                    if is_next {
-                        label_text = label_text.color(egui::Color32::YELLOW);
-                    }
-                    if watched {
-                        label_text = label_text.color(egui::Color32::from_gray(120));
-                    }
-
-                    if ui.add(egui::Label::new(label_text).sense(egui::Sense::click())).clicked() {
-                        open_in_player(video_path);
+        ui.vertical(|ui| {
+            ui.heading(&heading);
+            if !tags.is_empty() {
+                ui.horizontal_wrapped(|ui| {
+                    for tag in &tags {
+                        ui.label(egui::RichText::new(tag).size(10.0)
+                            .color(egui::Color32::from_gray(160)));
                     }
                 });
             }
+            ui.add_space(4.0);
+            let progress = if total > 0 { watched_count as f32 / total as f32 } else { 0.0 };
+            ui.add(egui::ProgressBar::new(progress)
+                .text(format!("{}/{} episodes", watched_count, total))
+                .desired_width(160.0));
         });
+    });
+
+    ui.separator();
+
+    // ── Bulk actions + Continue ───────────────────────────────────────────────
+    ui.horizontal(|ui| {
+        // Continue button — shows next episode label
+        if let Some(ref np) = next_path {
+            let next_label = seasons_data.iter()
+                .flat_map(|(_, eps)| eps.iter())
+                .find(|(rp, _, _, _, _, _)| rp == np)
+                .map(|(_, label, _, _, _, _)| label.clone())
+                .unwrap_or_else(|| "Next".into());
+            if ui.button(format!("Continue  {next_label}")).clicked() {
+                if let Some((_, _, _, _, _, vp)) = seasons_data.iter()
+                    .flat_map(|(_, eps)| eps.iter())
+                    .find(|(rp, _, _, _, _, _)| rp == np)
+                {
+                    open_in_player(vp);
+                }
+            }
+        }
+        if ui.button("Mark all").clicked() {
+            if let Some(show) = entries.iter_mut().find_map(|e| {
+                if let MediaEntry::Show(s) = e { if s.base_dir == base_dir { Some(s) } else { None } } else { None }
+            }) {
+                let all: Vec<String> = show.all_episodes().map(|ep| ep.relative_path.clone()).collect();
+                for p in &all { show.bookmarks.mark_watched(p, None); }
+                show.bookmarks.next_up = None;
+                let _ = save_show_bookmarks(&show.base_dir, &show.bookmarks);
+            }
+        }
+        if ui.button("Clear all").clicked() {
+            if let Some(show) = entries.iter_mut().find_map(|e| {
+                if let MediaEntry::Show(s) = e { if s.base_dir == base_dir { Some(s) } else { None } } else { None }
+            }) {
+                show.bookmarks.watched_episodes.clear();
+                show.bookmarks.next_up = None;
+                let _ = save_show_bookmarks(&show.base_dir, &show.bookmarks);
+            }
+        }
+    });
+
+    ui.separator();
+
+    // ── Episode list ──────────────────────────────────────────────────────────
+    // Collect mutations during rendering, apply after.
+    let mut toggle_path: Option<String> = None;
+    let mut open_path: Option<PathBuf> = None;
+    let multi_season = seasons_data.len() > 1;
+
+    egui::ScrollArea::vertical().id_source("ep_scroll").show(ui, |ui| {
+        for (season_label, episodes) in &seasons_data {
+            if multi_season {
+                ui.add_space(3.0);
+                ui.label(egui::RichText::new(season_label)
+                    .size(11.0).color(egui::Color32::from_gray(140)).strong());
+                ui.add_space(1.0);
+            }
+            for (rel_path, label, _ep_title, is_watched, is_next, video_path) in episodes {
+                ui.horizontal(|ui| {
+                    // Watched dot indicator instead of checkbox to avoid borrow issue
+                    let dot_color = if *is_watched {
+                        egui::Color32::from_rgb(55, 150, 55)
+                    } else {
+                        egui::Color32::from_gray(60)
+                    };
+                    let (dot_rect, dot_resp) = ui.allocate_exact_size(
+                        egui::vec2(10.0, 10.0), egui::Sense::click()
+                    );
+                    ui.painter().circle_filled(dot_rect.center(), 4.0, dot_color);
+                    if dot_resp.clicked() {
+                        toggle_path = Some(rel_path.clone());
+                    }
+                    if dot_resp.hovered() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        ui.painter().circle_stroke(dot_rect.center(), 4.0,
+                            egui::Stroke::new(1.0, egui::Color32::WHITE));
+                    }
+
+                    // Episode label
+                    let text_color = if *is_next {
+                        egui::Color32::from_rgb(210, 160, 50)
+                    } else if *is_watched {
+                        egui::Color32::from_gray(100)
+                    } else {
+                        egui::Color32::from_gray(210)
+                    };
+                    let resp = ui.add(
+                        egui::Label::new(egui::RichText::new(label).size(12.0).color(text_color))
+                            .sense(egui::Sense::click())
+                    );
+                    if resp.clicked() {
+                        open_path = Some(video_path.clone());
+                    }
+                    if resp.hovered() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+
+                    if *is_next {
+                        ui.label(egui::RichText::new("next").size(9.0)
+                            .color(egui::Color32::from_rgb(190, 140, 40)));
+                    }
+                });
+            }
+        }
+    });
+
+    // Apply mutations
+    if let Some(ref path) = toggle_path {
+        if let Some(show) = entries.iter_mut().find_map(|e| {
+            if let MediaEntry::Show(s) = e { if s.base_dir == base_dir { Some(s) } else { None } } else { None }
+        }) {
+            if show.bookmarks.is_watched(path) {
+                show.bookmarks.mark_unwatched(path);
+            } else {
+                // Find the episode that follows this one to auto-advance next_up
+                let following = show.all_episodes()
+                    .skip_while(|ep| &ep.relative_path != path)
+                    .nth(1)
+                    .map(|ep| ep.relative_path.clone());
+                show.bookmarks.mark_watched(path, following.as_deref());
+            }
+            let _ = save_show_bookmarks(&show.base_dir, &show.bookmarks);
+        }
+    }
+    if let Some(ref vp) = open_path {
+        open_in_player(vp);
     }
 
     ui.separator();

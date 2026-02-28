@@ -650,3 +650,185 @@ pub fn extract_metadata_with_episodes(
         season,
     }
 }
+
+// ── Episode filename parser ───────────────────────────────────────────────────
+
+/// Parsed episode information extracted from a raw filename stem.
+#[derive(Debug, Default)]
+pub struct ParsedEpisode {
+    pub season_num: u32,
+    pub episode_num: u32,
+    pub episode_title: Option<String>,
+}
+
+/// Parse a raw episode filename stem into structured metadata.
+///
+/// Supports common release naming conventions:
+///   `Delicious In Dungeon - S01E01 - Hot Pot`
+///   `Apocalypse Hotel (2025) S01E01 A True Hotel...`
+///   `[DiabloTripleA] Dr Stone - S03E01 [D5ACD9A8]`
+///   `Frieren Beyond Journey's End - S01E01 - The Journey's End`
+///   `[DB]Gurren Lagann_-_08_(Dual Audio_10bit_BD1080p_x265)`
+///
+/// Strategy:
+/// 1. Strip leading [Group] tags and trailing noise (CRC hashes, release tags).
+/// 2. Try to match SxxExx pattern → extract season, episode, and optional title.
+/// 3. Fall back to a bare 2-3 digit episode number (common in older fansubs).
+pub fn parse_episode(raw_stem: &str) -> ParsedEpisode {
+    let normalised = normalise_unicode(raw_stem);
+    // Replace underscores with spaces for uniform tokenisation.
+    let s = normalised.replace('_', " ");
+
+    // Strip leading [Group] tag like `[DB]` or `[DiabloTripleA]`.
+    let s = if s.trim_start().starts_with('[') {
+        if let Some(close) = s.find(']') {
+            s[close + 1..].trim_start_matches(|c: char| c == ' ' || c == '-').to_string()
+        } else { s }
+    } else { s };
+
+    // Strip trailing CRC hash like `[D5ACD9A8]` (8 hex chars).
+    let s = regex_strip_trailing_hash(&s);
+
+    // Strip trailing release tag blocks: (1080p WEB-DL ...) [Cytox] etc.
+    // We do this by finding the last SxxExx match and only cleaning after it.
+    let s = strip_trailing_release_tags(&s);
+
+    // Find SxxExx (or SxExx) pattern — case insensitive.
+    if let Some((season, episode, after)) = find_sxexx(&s) {
+        // Everything after the SxxExx marker is a candidate episode title.
+        let title = clean_episode_title(after);
+        return ParsedEpisode {
+            season_num: season,
+            episode_num: episode,
+            episode_title: if title.is_empty() { None } else { Some(title) },
+        };
+    }
+
+    // Fallback: bare 2-3 digit episode number after a separator.
+    // e.g. `Show - 08`, `Show_-_08_`
+    if let Some(ep) = find_bare_episode_number(&s) {
+        return ParsedEpisode {
+            season_num: 1,
+            episode_num: ep,
+            episode_title: None,
+        };
+    }
+
+    ParsedEpisode::default()
+}
+
+/// Strip trailing 6-8 character hex CRC hashes like `[D5ACD9A8]`.
+fn regex_strip_trailing_hash(s: &str) -> String {
+    let trimmed = s.trim_end();
+    if trimmed.ends_with(']') {
+        if let Some(open) = trimmed.rfind('[') {
+            let inner = &trimmed[open + 1..trimmed.len() - 1];
+            if inner.len() >= 6 && inner.len() <= 8
+                && inner.chars().all(|c| c.is_ascii_hexdigit())
+            {
+                return trimmed[..open].trim_end().to_string();
+            }
+        }
+    }
+    trimmed.to_string()
+}
+
+/// Strip trailing release tag blocks after the episode title.
+/// Only removes content inside `[...]` or `(...)` that contains known noise
+/// (resolution, codec, source, etc.) at the end of the string.
+fn strip_trailing_release_tags(s: &str) -> String {
+    let noise_re = [
+        "1080p","720p","2160p","4k","x265","x264","hevc","h264","avc",
+        "bluray","web-dl","webrip","web","bd","hdr","dv","aac","ac3",
+        "ddp","flac","10bit","dual audio","dual","japanese","english",
+    ];
+    let mut result = s.trim().to_string();
+    // Repeatedly strip trailing bracket groups that contain noise words.
+    loop {
+        let trimmed = result.trim_end().to_string();
+        let (open_ch, close_ch) = if trimmed.ends_with(')') { ('(', ')') }
+                                   else if trimmed.ends_with(']') { ('[', ']') }
+                                   else { break; };
+        if let Some(open) = trimmed.rfind(open_ch) {
+            let inner = trimmed[open + 1..trimmed.len() - 1].to_lowercase();
+            let is_noise = noise_re.iter().any(|n| inner.contains(n));
+            if is_noise {
+                result = trimmed[..open].trim_end().to_string();
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    result
+}
+
+/// Find an SxxExx or SxExx pattern in `s`. Returns (season, episode, rest_after).
+fn find_sxexx(s: &str) -> Option<(u32, u32, &str)> {
+    // Walk the string looking for 's' followed by digits, 'e', digits.
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i].to_ascii_lowercase() == b's' {
+            let start = i;
+            i += 1;
+            // Consume season digits (1-2 digits)
+            let s_start = i;
+            while i < bytes.len() && bytes[i].is_ascii_digit() { i += 1; }
+            let s_end = i;
+            if s_end == s_start || s_end - s_start > 2 { continue; }
+            // Optional whitespace
+            while i < bytes.len() && bytes[i] == b' ' { i += 1; }
+            // Expect 'e'
+            if i >= bytes.len() || bytes[i].to_ascii_lowercase() != b'e' {
+                i = start + 1; continue;
+            }
+            i += 1;
+            // Consume episode digits (2-3 digits)
+            let e_start = i;
+            while i < bytes.len() && bytes[i].is_ascii_digit() { i += 1; }
+            let e_end = i;
+            if e_end == e_start || e_end - e_start > 3 { i = start + 1; continue; }
+
+            let season: u32 = s[s_start..s_end].parse().unwrap_or(1);
+            let episode: u32 = s[e_start..e_end].parse().unwrap_or(0);
+            // Make sure we're at a word boundary (not mid-word like "season")
+            if start > 0 && bytes[start - 1].is_ascii_alphabetic() {
+                i = start + 1; continue;
+            }
+            let after = s[i..].trim_start_matches(|c: char| c == ' ' || c == '-' || c == '–');
+            return Some((season, episode, after));
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Find a bare 2-3 digit episode number after a separator.
+/// e.g. `Show - 08`, `Show_-_08_`
+fn find_bare_episode_number(s: &str) -> Option<u32> {
+    // Look for a dash/separator followed by 2-3 digits at end of meaningful content.
+    let parts: Vec<&str> = s.split(|c| c == '-' || c == '–').collect();
+    for part in parts.iter().rev() {
+        let t = part.trim();
+        if t.len() >= 2 && t.len() <= 3 && t.chars().all(|c| c.is_ascii_digit()) {
+            if let Ok(n) = t.parse::<u32>() {
+                if n > 0 && n < 1000 { return Some(n); }
+            }
+        }
+    }
+    None
+}
+
+/// Clean a candidate episode title string: strip leading/trailing separators,
+/// collapse whitespace, and return empty string if nothing meaningful remains.
+fn clean_episode_title(s: &str) -> String {
+    // Strip leading dashes and whitespace
+    let s = s.trim_matches(|c: char| c == '-' || c == '–' || c.is_whitespace());
+    // If it starts with a bracket it's probably a release tag, not a title
+    if s.starts_with('[') || s.starts_with('(') { return String::new(); }
+    // Collapse internal whitespace
+    let words: Vec<&str> = s.split_whitespace().collect();
+    words.join(" ")
+}

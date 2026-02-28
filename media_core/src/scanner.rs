@@ -9,7 +9,7 @@ use natord::compare as natural_compare;
 
 use crate::{
     models::{Episode, MediaEntry, Movie, Season, Show, VIDEO_EXTENSIONS},
-    tmdb::{extract_metadata, extract_metadata_with_episodes},
+    tmdb::{extract_metadata, extract_metadata_with_episodes, parse_episode},
     sidecar::{load_movie_state, load_show_bookmarks},
 };
 
@@ -239,15 +239,18 @@ fn collect_videos_direct(dir: &Path) -> Vec<PathBuf> {
 }
 
 fn make_episode(show_base: &Path, video_path: &Path) -> Episode {
-    let title = stem_title(video_path);
-    // Relative path is the stable bookmark key.
+    let raw_stem = stem_title(video_path);
+    let parsed = parse_episode(&raw_stem);
     let relative_path = video_path
         .strip_prefix(show_base)
         .unwrap_or(video_path)
         .to_string_lossy()
-        .replace('\\', "/"); // normalise to forward slashes on Windows
+        .replace('\\', "/");
     Episode {
-        title,
+        title: raw_stem,
+        season_num: parsed.season_num,
+        episode_num: parsed.episode_num,
+        episode_title: parsed.episode_title,
         video_mtime: mtime(video_path),
         video_path: video_path.to_path_buf(),
         relative_path,
