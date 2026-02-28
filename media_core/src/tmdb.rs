@@ -28,11 +28,29 @@ pub fn config_path() -> std::io::Result<std::path::PathBuf> {
     Ok(dir.join("config.toml"))
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AppConfig {
     /// TMDB v3 API key. Leave empty to disable poster fetching.
     #[serde(default)]
     pub tmdb_api_key: String,
+    /// Whether to fetch and display poster images.
+    #[serde(default = "default_true")]
+    pub show_posters: bool,
+    /// Automatically mark an entry as watched when it is opened in the player.
+    #[serde(default = "default_true")]
+    pub auto_mark_watched: bool,
+}
+
+fn default_true() -> bool { true }
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            tmdb_api_key: String::new(),
+            show_posters: true,
+            auto_mark_watched: true,
+        }
+    }
 }
 
 pub fn load_config() -> AppConfig {
@@ -746,7 +764,7 @@ fn strip_trailing_release_tags(s: &str) -> String {
     // Repeatedly strip trailing bracket groups that contain noise words.
     loop {
         let trimmed = result.trim_end().to_string();
-        let (open_ch, close_ch) = if trimmed.ends_with(')') { ('(', ')') }
+        let (open_ch, _close_ch) = if trimmed.ends_with(')') { ('(', ')') }
                                    else if trimmed.ends_with(']') { ('[', ']') }
                                    else { break; };
         if let Some(open) = trimmed.rfind(open_ch) {

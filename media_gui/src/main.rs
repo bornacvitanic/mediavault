@@ -21,11 +21,24 @@ use media_core::{
 };
 
 fn main() -> eframe::Result<()> {
+    // Read our own persisted maximized flag from a small sidecar file next to
+    // eframe's storage, so we can pass it to NativeOptions before the app starts.
+    // This prevents a maximized-exit from restoring as a full-desktop rect.
+    let was_maximized = eframe::storage_dir("MediaVault")
+        .map(|dir| dir.join("mediavault_maximized"))
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| s.trim() == "true")
+        .unwrap_or(false);
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("MediaVault")
-            .with_inner_size([1100.0, 720.0]),
-        // Enable eframe persistence so the last library path survives restarts.
+            // Sensible default: 1280×800 centered. persist_window will override
+            // this with the last saved position/size after the first run.
+            .with_inner_size([1280.0, 800.0])
+            .with_position([100.0, 100.0])
+            .with_maximized(was_maximized),
+        // Persists window size and position (but not maximized — we handle that).
         persist_window: true,
         ..Default::default()
     };
@@ -117,6 +130,11 @@ struct App {
 
     // Card zoom (1.0 = default size)
     card_zoom: f32,
+    /// Index into the currently displayed (filtered/sorted) card list.
+    /// Drives keyboard navigation and Enter-to-play.
+    focused_idx: Option<usize>,
+    /// Tracked each frame so save_state() can persist it without needing ctx.
+    is_maximized: bool,
 
     // Config
     config: AppConfig,
@@ -127,11 +145,22 @@ struct App {
 impl App {
     fn new(cc: &eframe::CreationContext) -> Self {
         let (poster_tx, poster_rx) = unbounded();
-        let config = load_config();
+        let mut config = load_config();
         let api_key_buf = config.tmdb_api_key.clone();
         // Restore last library path from eframe persistent storage.
         let library_root = cc.storage
             .and_then(|s| eframe::get_value::<PathBuf>(s, "library_root"));
+        let card_zoom: f32 = cc.storage
+            .and_then(|s| eframe::get_value(s, "card_zoom"))
+            .unwrap_or(1.0);
+        if let Some(s) = cc.storage {
+            if let Some(v) = eframe::get_value::<bool>(s, "show_posters") {
+                config.show_posters = v;
+            }
+            if let Some(v) = eframe::get_value::<bool>(s, "auto_mark_watched") {
+                config.auto_mark_watched = v;
+            }
+        }
         let entries = library_root.as_deref()
             .map(media_core::scan_library)
             .unwrap_or_default();
@@ -150,7 +179,9 @@ impl App {
             poster_rx,
             poster_tx,
             poster_attempted: Default::default(),
-            card_zoom: 1.0,
+            card_zoom,
+            focused_idx: None,
+            is_maximized: false,
             config,
             show_settings: false,
             api_key_buf,
@@ -170,7 +201,17 @@ impl App {
         if let Some(root) = &self.library_root {
             eframe::set_value(storage, "library_root", root);
         }
+        eframe::set_value(storage, "card_zoom", &self.card_zoom);
+        eframe::set_value(storage, "show_posters", &self.config.show_posters);
+        eframe::set_value(storage, "auto_mark_watched", &self.config.auto_mark_watched);
+        // Write maximized flag to a sidecar file so main() can read it before
+        // the app initialises (eframe storage isn't available that early).
+        if let Some(dir) = eframe::storage_dir("MediaVault") {
+            let _ = std::fs::write(dir.join("mediavault_maximized"), self.is_maximized.to_string());
+        }
     }
+
+
 
     /// Kick off a background thread to fetch (or load from cache) a poster for
     /// the given entry. Does nothing if a fetch was already attempted.
@@ -345,6 +386,7 @@ impl eframe::App for App {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.is_maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
         self.poll_posters(ctx);
 
         // ── Top menu bar ──────────────────────────────────────────────────────
@@ -379,8 +421,19 @@ impl eframe::App for App {
                     ui.text_edit_singleline(&mut self.api_key_buf);
                     ui.small("Get a free key at https://www.themoviedb.org/settings/api");
                     ui.add_space(4.0);
-                    if ui.button("Save").clicked() {
+                    if ui.button("Save API Key").clicked() {
                         self.config.tmdb_api_key = self.api_key_buf.trim().to_string();
+                        if let Err(e) = save_config(&self.config) {
+                            eprintln!("Failed to save config: {}", e);
+                        }
+                    }
+                    ui.separator();
+                    if ui.checkbox(&mut self.config.show_posters, "Show poster images").changed() {
+                        if let Err(e) = save_config(&self.config) {
+                            eprintln!("Failed to save config: {}", e);
+                        }
+                    }
+                    if ui.checkbox(&mut self.config.auto_mark_watched, "Auto-mark as watched when opened in player").changed() {
                         if let Err(e) = save_config(&self.config) {
                             eprintln!("Failed to save config: {}", e);
                         }
@@ -455,9 +508,9 @@ impl eframe::App for App {
                         ui.separator();
 
                         if detail_is_movie {
-                            render_movie_detail(ui, &detail_base, &mut self.entries, &self.textures, &mut self.comment_buf, &mut self.comment_dirty);
+                            render_movie_detail(ui, &detail_base, &mut self.entries, &self.textures, self.config.auto_mark_watched, &mut self.comment_buf, &mut self.comment_dirty);
                         } else {
-                            render_show_detail(ui, &detail_base, &mut self.entries, &self.textures, &mut self.comment_buf, &mut self.comment_dirty);
+                            render_show_detail(ui, &detail_base, &mut self.entries, &self.textures, self.config.auto_mark_watched, &mut self.comment_buf, &mut self.comment_dirty);
                         }
                     });
                 });
@@ -503,7 +556,7 @@ impl eframe::App for App {
                 let is_movie = is_movies[idx];
                 let title = &titles[idx];
                 let poster_path = poster_paths[idx].clone();
-                if !self.poster_attempted.contains(&poster_path) {
+                if self.config.show_posters && !self.poster_attempted.contains(&poster_path) {
                     self.poster_attempted.insert(poster_path.clone());
                     let poster_path = poster_path;
                     let api_key = self.config.tmdb_api_key.clone();
@@ -530,6 +583,128 @@ impl eframe::App for App {
                 }
             }
 
+            // ── Ctrl+scroll zoom ─────────────────────────────────────────────
+            let scroll_delta = ctx.input(|i| {
+                if i.modifiers.ctrl { i.smooth_scroll_delta.y } else { 0.0 }
+            });
+            if scroll_delta != 0.0 {
+                self.card_zoom = (self.card_zoom + scroll_delta * 0.002).clamp(0.4, 2.5);
+            }
+
+            // ── Keyboard navigation ───────────────────────────────────────────
+            let n_cards = indices.len();
+            if n_cards > 0 {
+                let card_w_nav = 150.0 * self.card_zoom + 12.0;
+                let available_w_nav = ui.available_width();
+                let cols_nav = ((available_w_nav / card_w_nav) as usize).max(1);
+
+                let prev_focused = self.focused_idx;
+                ctx.input(|i| {
+                    if i.key_pressed(egui::Key::ArrowRight) {
+                        self.focused_idx = Some(match self.focused_idx {
+                            Some(f) => (f + 1).min(n_cards - 1),
+                            None => 0,
+                        });
+                    }
+                    if i.key_pressed(egui::Key::ArrowLeft) {
+                        self.focused_idx = Some(match self.focused_idx {
+                            Some(f) => f.saturating_sub(1),
+                            None => 0,
+                        });
+                    }
+                    if i.key_pressed(egui::Key::ArrowDown) {
+                        self.focused_idx = Some(match self.focused_idx {
+                            Some(f) => (f + cols_nav).min(n_cards - 1),
+                            None => 0,
+                        });
+                    }
+                    if i.key_pressed(egui::Key::ArrowUp) {
+                        self.focused_idx = Some(match self.focused_idx {
+                            Some(f) => f.saturating_sub(cols_nav),
+                            None => 0,
+                        });
+                    }
+                });
+                // Sync detail panel whenever keyboard focus moves to a new card.
+                if self.focused_idx != prev_focused {
+                    if let Some(fi) = self.focused_idx {
+                        if fi < n_cards {
+                            // Extract owned data first to release the immutable borrow
+                            // before calling flush_comments() which borrows self mutably.
+                            let (poster, is_movie, base_dir) = {
+                                let entry = &self.entries[indices[fi]];
+                                (
+                                    entry.poster_cache_path().clone(),
+                                    matches!(entry, MediaEntry::Movie(_)),
+                                    entry.base_dir().clone(),
+                                )
+                            };
+                            self.flush_comments();
+                            let comments = load_comments(&base_dir);
+                            self.comment_buf = comments.markdown;
+                            self.comment_dirty = false;
+                            self.detail = if is_movie {
+                                DetailPanel::Movie(poster)
+                            } else {
+                                DetailPanel::Show(poster)
+                            };
+                        }
+                    }
+                }
+
+                // Enter — play or open detail for the focused card
+                if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    if let Some(fi) = self.focused_idx {
+                        if fi < n_cards {
+                            let entry_idx = indices[fi];
+                            let entry = &self.entries[entry_idx];
+                            let auto_mark = self.config.auto_mark_watched;
+                            match entry {
+                                MediaEntry::Movie(m) => {
+                                    let vp = m.video_path.clone();
+                                    let bd = m.base_dir.clone();
+                                    open_in_player(&vp);
+                                    if auto_mark && !m.state.watched {
+                                        // mark watched then save — re-borrow mutably
+                                        if let MediaEntry::Movie(m2) = &mut self.entries[entry_idx] {
+                                            m2.state.watched = true;
+                                            m2.state.watch_history.push(WatchEvent { watched_at: Utc::now(), note: None });
+                                            let _ = save_movie_state(&bd, &m2.state);
+                                        }
+                                    }
+                                }
+                                MediaEntry::Show(s) => {
+                                    let next = s.bookmarks.next_up.clone().or_else(|| {
+                                        s.all_episodes()
+                                            .find(|ep| !s.bookmarks.is_watched(&ep.relative_path))
+                                            .map(|ep| ep.relative_path.clone())
+                                    });
+                                    if let Some(ref np) = next {
+                                        let ep_vp = s.all_episodes()
+                                            .find(|ep| &ep.relative_path == np)
+                                            .map(|ep| ep.video_path.clone());
+                                        let bd = s.base_dir.clone();
+                                        if let Some(vp) = ep_vp {
+                                            open_in_player(&vp);
+                                            if auto_mark {
+                                                if let MediaEntry::Show(s2) = &mut self.entries[entry_idx] {
+                                                    let following = s2.all_episodes()
+                                                        .skip_while(|ep| &ep.relative_path != np)
+                                                        .nth(1)
+                                                        .map(|ep| ep.relative_path.clone());
+                                                    s2.bookmarks.mark_watched(np, following.as_deref());
+                                                    let _ = save_show_bookmarks(&bd, &s2.bookmarks);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let card_w = 150.0 * self.card_zoom;
                 let card_h = 225.0 * self.card_zoom;  // 2:3 poster aspect ratio
@@ -538,9 +713,12 @@ impl eframe::App for App {
                 let cols = ((available_w / (card_w + spacing)) as usize).max(1);
 
                 // Pre-collect card data to avoid mid-loop borrow conflicts.
-                let cards: Vec<(PathBuf, PathBuf, String, Vec<String>, Option<(usize,usize)>, bool, bool, bool, bool)> = indices
+                let show_posters = self.config.show_posters;
+                let focused = self.focused_idx;
+                let cards: Vec<(PathBuf, PathBuf, String, Vec<String>, Option<(usize,usize)>, bool, bool, bool, bool, bool)> = indices
                     .iter()
-                    .map(|&idx| {
+                    .enumerate()
+                    .map(|(card_pos, &idx)| {
                         let entry = &self.entries[idx];
                         let base_dir = entry.base_dir().clone();
                         let poster_path = entry.poster_cache_path().clone();
@@ -558,15 +736,16 @@ impl eframe::App for App {
                             DetailPanel::Movie(p) | DetailPanel::Show(p) => *p == poster_path,
                             DetailPanel::None => false,
                         };
-                        (base_dir, poster_path, title, tags, progress, is_movie, watched, in_progress, selected)
+                        let keyboard_focus = focused == Some(card_pos);
+                        (base_dir, poster_path, title, tags, progress, is_movie, watched, in_progress, selected || keyboard_focus, show_posters)
                     })
                     .collect();
 
                 for row_cards in cards.chunks(cols) {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing = egui::vec2(spacing, 0.0);
-                        for (base_dir, poster_path, title, tags, progress, is_movie, watched, in_progress, selected) in row_cards {
-                            let texture = self.textures.get(poster_path).cloned();
+                        for (base_dir, poster_path, title, tags, progress, is_movie, watched, in_progress, selected, show_posters) in row_cards {
+                            let texture = if *show_posters { self.textures.get(poster_path).cloned() } else { None };
                             let clicked = render_media_card(
                                 ui,
                                 title,
@@ -590,6 +769,9 @@ impl eframe::App for App {
                                 } else {
                                     DetailPanel::Show(poster_path.clone())
                                 };
+                                // Clear keyboard focus so mouse and keys don't
+                                // show two simultaneous selections.
+                                self.focused_idx = None;
                             }
                         }
                     });
@@ -885,6 +1067,7 @@ fn render_movie_detail(
     base_dir: &Path,
     entries: &mut Vec<MediaEntry>,
     textures: &HashMap<PathBuf, TextureHandle>,
+    auto_mark_watched: bool,
     comment_buf: &mut String,
     comment_dirty: &mut bool,
 ) {
@@ -929,6 +1112,11 @@ fn render_movie_detail(
     ui.horizontal(|ui| {
         if ui.button("Open in Player").clicked() {
             open_in_player(&movie.video_path);
+            if auto_mark_watched && !movie.state.watched {
+                movie.state.watched = true;
+                movie.state.watch_history.push(WatchEvent { watched_at: Utc::now(), note: None });
+                let _ = save_movie_state(&movie.base_dir, &movie.state);
+            }
         }
         if movie.state.watched {
             if ui.button("Mark Unwatched").clicked() {
@@ -965,6 +1153,7 @@ fn render_show_detail(
     base_dir: &Path,
     entries: &mut Vec<MediaEntry>,
     textures: &HashMap<PathBuf, TextureHandle>,
+    auto_mark_watched: bool,
     comment_buf: &mut String,
     comment_dirty: &mut bool,
 ) {
@@ -1049,6 +1238,18 @@ fn render_show_detail(
                     .find(|(rp, _, _, _, _, _)| rp == np)
                 {
                     open_in_player(vp);
+                    if auto_mark_watched {
+                        if let Some(show) = entries.iter_mut().find_map(|e| {
+                            if let MediaEntry::Show(s) = e { if s.base_dir == base_dir { Some(s) } else { None } } else { None }
+                        }) {
+                            let following = show.all_episodes()
+                                .skip_while(|ep| &ep.relative_path != np)
+                                .nth(1)
+                                .map(|ep| ep.relative_path.clone());
+                            show.bookmarks.mark_watched(np, following.as_deref());
+                            let _ = save_show_bookmarks(&show.base_dir, &show.bookmarks);
+                        }
+                    }
                 }
             }
         }
@@ -1078,7 +1279,7 @@ fn render_show_detail(
     // ── Episode list ──────────────────────────────────────────────────────────
     // Collect mutations during rendering, apply after.
     let mut toggle_path: Option<String> = None;
-    let mut open_path: Option<PathBuf> = None;
+    let mut open_path: Option<(PathBuf, String)> = None;
     let multi_season = seasons_data.len() > 1;
 
     egui::ScrollArea::vertical().id_source("ep_scroll").show(ui, |ui| {
@@ -1123,7 +1324,7 @@ fn render_show_detail(
                             .sense(egui::Sense::click())
                     );
                     if resp.clicked() {
-                        open_path = Some(video_path.clone());
+                        open_path = Some((video_path.clone(), rel_path.clone()));
                     }
                     if resp.hovered() {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -1156,8 +1357,20 @@ fn render_show_detail(
             let _ = save_show_bookmarks(&show.base_dir, &show.bookmarks);
         }
     }
-    if let Some(ref vp) = open_path {
+    if let Some((ref vp, ref ep_rel)) = open_path {
         open_in_player(vp);
+        if auto_mark_watched {
+            if let Some(show) = entries.iter_mut().find_map(|e| {
+                if let MediaEntry::Show(s) = e { if s.base_dir == base_dir { Some(s) } else { None } } else { None }
+            }) {
+                let following = show.all_episodes()
+                    .skip_while(|ep| &ep.relative_path != ep_rel)
+                    .nth(1)
+                    .map(|ep| ep.relative_path.clone());
+                show.bookmarks.mark_watched(ep_rel, following.as_deref());
+                let _ = save_show_bookmarks(&show.base_dir, &show.bookmarks);
+            }
+        }
     }
 
     ui.separator();
