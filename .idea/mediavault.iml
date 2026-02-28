@@ -5,6 +5,7 @@
       <sourceFolder url="file://$MODULE_DIR$/media_core/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/media_gui/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/media_cli/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/media_tui/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

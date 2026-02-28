@@ -1,0 +1,15 @@
+[package]
+name = "media_tui"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mvt"
+path = "src/main.rs"
+
+[dependencies]
+media_core = { path = "../media_core" }
+ratatui = "0.29"
+crossterm = "0.28"
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1.0.102"
