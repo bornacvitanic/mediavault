@@ -58,6 +58,15 @@ enum SortBy {
     Title,
     DateAdded,
     WatchStatus,
+    /// Most recently watched entry first — uses last watch_history timestamp
+    /// for movies, last watched episode mtime for shows.
+    RecentlyWatched,
+    /// Watch completion ratio: 0%–100% for shows, binary for movies.
+    Progress,
+    /// Total episode count (shows only; movies sort together at bottom).
+    EpisodeCount,
+    /// Release year extracted from filename metadata.
+    ReleaseYear,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -252,6 +261,19 @@ impl App {
                 SortBy::WatchStatus => {
                     watch_sort_key(ea).cmp(&watch_sort_key(eb))
                 }
+                SortBy::RecentlyWatched => {
+                    last_watched_time(ea).cmp(&last_watched_time(eb))
+                }
+                SortBy::Progress => {
+                    progress_key(ea).partial_cmp(&progress_key(eb))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                }
+                SortBy::EpisodeCount => {
+                    episode_count_key(ea).cmp(&episode_count_key(eb))
+                }
+                SortBy::ReleaseYear => {
+                    release_year_key(ea).cmp(&release_year_key(eb))
+                }
             };
             if self.sort_asc { cmp } else { cmp.reverse() }
         });
@@ -388,7 +410,11 @@ impl eframe::App for App {
                     ui.label("Sort:");
                     ui.selectable_value(&mut self.sort_by, SortBy::Title, "Title");
                     ui.selectable_value(&mut self.sort_by, SortBy::DateAdded, "Date Added");
-                    ui.selectable_value(&mut self.sort_by, SortBy::WatchStatus, "Watch Status");
+                    ui.selectable_value(&mut self.sort_by, SortBy::WatchStatus, "Status");
+                    ui.selectable_value(&mut self.sort_by, SortBy::RecentlyWatched, "Recently Watched");
+                    ui.selectable_value(&mut self.sort_by, SortBy::Progress, "Progress");
+                    ui.selectable_value(&mut self.sort_by, SortBy::EpisodeCount, "Episode Count");
+                    ui.selectable_value(&mut self.sort_by, SortBy::ReleaseYear, "Year");
                     let asc_label = if self.sort_asc { "Asc" } else { "Desc" };
                     if ui.button(asc_label).clicked() {
                         self.sort_asc = !self.sort_asc;
@@ -1183,6 +1209,47 @@ fn is_in_progress(entry: &MediaEntry) -> bool {
 
 fn watch_sort_key(entry: &MediaEntry) -> u8 {
     if is_watched(entry) { 2 } else if is_in_progress(entry) { 1 } else { 0 }
+}
+
+/// Most recent watch timestamp across all watch events / watched episodes.
+/// Returns None for unwatched entries so they sort to the bottom.
+fn last_watched_time(entry: &MediaEntry) -> Option<chrono::DateTime<chrono::Utc>> {
+    match entry {
+        MediaEntry::Movie(m) => m.state.watch_history.iter().map(|e| e.watched_at).max(),
+        MediaEntry::Show(s) => {
+            // Use the mtime of the most recently watched episode as a proxy,
+            // since show bookmarks don't store timestamps.
+            s.all_episodes()
+                .filter(|ep| s.bookmarks.is_watched(&ep.relative_path))
+                .filter_map(|ep| ep.video_mtime)
+                .max()
+        }
+    }
+}
+
+/// Completion ratio in [0.0, 1.0]. Movies are 0.0 (unwatched) or 1.0 (watched).
+fn progress_key(entry: &MediaEntry) -> f32 {
+    match entry {
+        MediaEntry::Movie(m) => if m.state.watched { 1.0 } else { 0.0 },
+        MediaEntry::Show(s) => {
+            let total = s.episode_count();
+            if total == 0 { return 0.0; }
+            s.watched_count() as f32 / total as f32
+        }
+    }
+}
+
+/// Episode count for shows; 0 for movies so they sort together at one end.
+fn episode_count_key(entry: &MediaEntry) -> usize {
+    match entry {
+        MediaEntry::Movie(_) => 0,
+        MediaEntry::Show(s) => s.episode_count(),
+    }
+}
+
+/// Release year from extracted filename metadata; 0 if unknown.
+fn release_year_key(entry: &MediaEntry) -> u32 {
+    entry.metadata().year.unwrap_or(0)
 }
 
 fn open_in_player(path: &Path) {
