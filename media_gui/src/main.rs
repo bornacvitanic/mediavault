@@ -14,7 +14,7 @@ use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
 use media_core::{
     models::{Comments, MediaEntry, Movie, Show, WatchEvent},
     sidecar::{
-        load_comments, save_comments, save_movie_state, save_show_bookmarks,
+        load_comments_from_path, save_comments_to_path, save_movie_state, save_show_bookmarks,
     },
     tmdb::{fetch_poster, load_config, save_config, AppConfig},
     scan_library,
@@ -325,14 +325,14 @@ impl App {
     // ── Detail panel helpers ───────────────────────────────────────────────────
 
     fn open_detail(&mut self, entry: &MediaEntry) {
-        // Save any pending comment before switching.
         self.flush_comments();
-        let comments = load_comments(entry.base_dir());
+        let cp = entry.comments_path();
+        let comments = load_comments_from_path(&cp);
         self.comment_buf = comments.markdown.clone();
         self.comment_dirty = false;
         self.detail = match entry {
-            MediaEntry::Movie(m) => DetailPanel::Movie(m.base_dir.clone()),
-            MediaEntry::Show(s) => DetailPanel::Show(s.base_dir.clone()),
+            MediaEntry::Movie(m) => DetailPanel::Movie(m.poster_path.clone()),
+            MediaEntry::Show(s) => DetailPanel::Show(s.poster_path.clone()),
         };
     }
 
@@ -340,19 +340,19 @@ impl App {
         if !self.comment_dirty {
             return;
         }
-        let base_dir = match &self.detail {
+        let cp = match &self.detail {
             DetailPanel::Movie(p) | DetailPanel::Show(p) => {
-                // poster_path is the key; resolve back to base_dir for sidecar ops
                 self.entries.iter()
                     .find(|e| e.poster_cache_path() == p)
-                    .map(|e| e.base_dir().clone())
-                    .unwrap_or_else(|| p.clone())
+                    .map(|e| e.comments_path())
             }
             DetailPanel::None => return,
         };
-        let comments = Comments { markdown: self.comment_buf.clone() };
-        if let Err(e) = save_comments(&base_dir, &comments) {
-            eprintln!("Failed to save comments: {}", e);
+        if let Some(cp) = cp {
+            let comments = Comments { markdown: self.comment_buf.clone() };
+            if let Err(e) = save_comments_to_path(&cp, &comments) {
+                eprintln!("Failed to save comments: {}", e);
+            }
         }
         self.comment_dirty = false;
     }
@@ -482,16 +482,9 @@ impl eframe::App for App {
         // ── Detail panel (right side) ─────────────────────────────────────────
         let has_detail = !matches!(self.detail, DetailPanel::None);
         if has_detail {
-            // DetailPanel is keyed on poster_path; resolve to base_dir for detail fns.
-            let (detail_base, detail_is_movie) = match &self.detail {
-                DetailPanel::Movie(poster) | DetailPanel::Show(poster) => {
-                    let is_movie = matches!(self.detail, DetailPanel::Movie(_));
-                    let base = self.entries.iter()
-                        .find(|e| e.poster_cache_path() == poster)
-                        .map(|e| e.base_dir().clone())
-                        .unwrap_or_else(|| poster.clone());
-                    (base, is_movie)
-                }
+            let (detail_key, detail_is_movie) = match &self.detail {
+                DetailPanel::Movie(p) => (p.clone(), true),
+                DetailPanel::Show(p)  => (p.clone(), false),
                 DetailPanel::None => unreachable!(),
             };
 
@@ -508,9 +501,14 @@ impl eframe::App for App {
                         ui.separator();
 
                         if detail_is_movie {
-                            render_movie_detail(ui, &detail_base, &mut self.entries, &self.textures, self.config.auto_mark_watched, &mut self.comment_buf, &mut self.comment_dirty);
+                            render_movie_detail(ui, &detail_key, &mut self.entries, &self.textures, self.config.auto_mark_watched, &mut self.comment_buf, &mut self.comment_dirty);
                         } else {
-                            render_show_detail(ui, &detail_base, &mut self.entries, &self.textures, self.config.auto_mark_watched, &mut self.comment_buf, &mut self.comment_dirty);
+                            // For shows, resolve poster_path → base_dir (shows have unique dirs)
+                            let base = self.entries.iter()
+                                .find(|e| e.poster_cache_path() == &detail_key)
+                                .map(|e| e.base_dir().clone())
+                                .unwrap_or_else(|| detail_key.clone());
+                            render_show_detail(ui, &base, &mut self.entries, &self.textures, self.config.auto_mark_watched, &mut self.comment_buf, &mut self.comment_dirty);
                         }
                     });
                 });
@@ -631,7 +629,7 @@ impl eframe::App for App {
                         if fi < n_cards {
                             // Extract owned data first to release the immutable borrow
                             // before calling flush_comments() which borrows self mutably.
-                            let (poster, is_movie, base_dir) = {
+                            let (poster, is_movie, _base_dir) = {
                                 let entry = &self.entries[indices[fi]];
                                 (
                                     entry.poster_cache_path().clone(),
@@ -639,8 +637,12 @@ impl eframe::App for App {
                                     entry.base_dir().clone(),
                                 )
                             };
+                            let cp = {
+                                let entry = &self.entries[indices[fi]];
+                                entry.comments_path()
+                            };
                             self.flush_comments();
-                            let comments = load_comments(&base_dir);
+                            let comments = load_comments_from_path(&cp);
                             self.comment_buf = comments.markdown;
                             self.comment_dirty = false;
                             self.detail = if is_movie {
@@ -662,14 +664,12 @@ impl eframe::App for App {
                             match entry {
                                 MediaEntry::Movie(m) => {
                                     let vp = m.video_path.clone();
-                                    let bd = m.base_dir.clone();
                                     open_in_player(&vp);
                                     if auto_mark && !m.state.watched {
-                                        // mark watched then save — re-borrow mutably
                                         if let MediaEntry::Movie(m2) = &mut self.entries[entry_idx] {
                                             m2.state.watched = true;
                                             m2.state.watch_history.push(WatchEvent { watched_at: Utc::now(), note: None });
-                                            let _ = save_movie_state(&bd, &m2.state);
+                                            let _ = save_movie_state(&m2.video_path.clone(), &m2.state);
                                         }
                                     }
                                 }
@@ -744,7 +744,7 @@ impl eframe::App for App {
                 for row_cards in cards.chunks(cols) {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing = egui::vec2(spacing, 0.0);
-                        for (base_dir, poster_path, title, tags, progress, is_movie, watched, in_progress, selected, show_posters) in row_cards {
+                        for (_base_dir, poster_path, title, tags, progress, is_movie, watched, in_progress, selected, show_posters) in row_cards {
                             let texture = if *show_posters { self.textures.get(poster_path).cloned() } else { None };
                             let clicked = render_media_card(
                                 ui,
@@ -760,9 +760,17 @@ impl eframe::App for App {
                                 card_h,
                             );
                             if clicked {
+                                // Find this entry's comments path before flushing
+                                let cp = self.entries.iter()
+                                    .find(|e| e.poster_cache_path() == poster_path)
+                                    .map(|e| e.comments_path());
                                 self.flush_comments();
-                                let comments = load_comments(base_dir);
-                                self.comment_buf = comments.markdown;
+                                if let Some(cp) = cp {
+                                    let comments = load_comments_from_path(&cp);
+                                    self.comment_buf = comments.markdown;
+                                } else {
+                                    self.comment_buf = String::new();
+                                }
                                 self.comment_dirty = false;
                                 self.detail = if *is_movie {
                                     DetailPanel::Movie(poster_path.clone())
@@ -1064,7 +1072,7 @@ fn render_media_card(
 
 fn render_movie_detail(
     ui: &mut egui::Ui,
-    base_dir: &Path,
+    poster_key: &Path,  // unique per movie — used to look up the correct entry
     entries: &mut Vec<MediaEntry>,
     textures: &HashMap<PathBuf, TextureHandle>,
     auto_mark_watched: bool,
@@ -1072,7 +1080,7 @@ fn render_movie_detail(
     comment_dirty: &mut bool,
 ) {
     let movie = match entries.iter_mut().find_map(|e| {
-        if let MediaEntry::Movie(m) = e { if m.base_dir == base_dir { Some(m) } else { None } } else { None }
+        if let MediaEntry::Movie(m) = e { if m.poster_path == poster_key { Some(m) } else { None } } else { None }
     }) {
         Some(m) => m,
         None => return,
@@ -1115,23 +1123,23 @@ fn render_movie_detail(
             if auto_mark_watched && !movie.state.watched {
                 movie.state.watched = true;
                 movie.state.watch_history.push(WatchEvent { watched_at: Utc::now(), note: None });
-                let _ = save_movie_state(&movie.base_dir, &movie.state);
+                let _ = save_movie_state(&movie.video_path, &movie.state);
             }
         }
         if movie.state.watched {
             if ui.button("Mark Unwatched").clicked() {
                 movie.state.watched = false;
-                let _ = save_movie_state(&movie.base_dir, &movie.state);
+                let _ = save_movie_state(&movie.video_path, &movie.state);
             }
             if ui.button("Log rewatch").clicked() {
                 movie.state.watch_history.push(WatchEvent { watched_at: Utc::now(), note: None });
-                let _ = save_movie_state(&movie.base_dir, &movie.state);
+                let _ = save_movie_state(&movie.video_path, &movie.state);
             }
         } else {
             if ui.button("Mark Watched").clicked() {
                 movie.state.watched = true;
                 movie.state.watch_history.push(WatchEvent { watched_at: Utc::now(), note: None });
-                let _ = save_movie_state(&movie.base_dir, &movie.state);
+                let _ = save_movie_state(&movie.video_path, &movie.state);
             }
         }
     });
@@ -1145,7 +1153,7 @@ fn render_movie_detail(
     }
 
     ui.separator();
-    render_comments_editor(ui, comment_buf, comment_dirty, base_dir);
+    render_comments_editor(ui, comment_buf, comment_dirty);
 }
 
 fn render_show_detail(
@@ -1374,14 +1382,13 @@ fn render_show_detail(
     }
 
     ui.separator();
-    render_comments_editor(ui, comment_buf, comment_dirty, base_dir);
+    render_comments_editor(ui, comment_buf, comment_dirty);
 }
 
 fn render_comments_editor(
     ui: &mut egui::Ui,
     comment_buf: &mut String,
     comment_dirty: &mut bool,
-    base_dir: &Path,
 ) {
     ui.label("Notes (markdown):");
     let resp = ui.add(
@@ -1392,12 +1399,11 @@ fn render_comments_editor(
     if resp.changed() {
         *comment_dirty = true;
     }
+    // Saving is handled centrally by flush_comments() (called on panel close,
+    // entry switch, and app exit) so the button just signals intent.
     if *comment_dirty && ui.button("Save notes").clicked() {
-        let comments = Comments { markdown: comment_buf.clone() };
-        if let Err(e) = save_comments(base_dir, &comments) {
-            eprintln!("Failed to save comments: {}", e);
-        }
-        *comment_dirty = false;
+        // flush_comments() will write to disk on the next detail-switch or exit.
+        // Nothing to do here — dirty flag is already set from resp.changed().
     }
 }
 

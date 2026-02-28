@@ -106,7 +106,7 @@ fn movie_from_single_file(base_dir: &Path, video_path: &Path) -> Option<Movie> {
     let raw = stem_title(video_path);
     let metadata = extract_metadata(&raw);
     let title = raw.clone();
-    let state = load_movie_state(base_dir).unwrap_or_default();
+    let state = load_movie_state(video_path).unwrap_or_default();
     let poster_path = base_dir.join(format!(
         "{}.media.poster.jpg",
         video_path.file_stem().unwrap_or_default().to_string_lossy()

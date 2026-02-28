@@ -60,6 +60,21 @@ impl MediaEntry {
             MediaEntry::Show(s) => &s.poster_path,
         }
     }
+
+    /// Path to the comments sidecar for this entry.
+    /// Movies use `{video_stem}.media.comments.md` next to the video file so
+    /// root-level movies sharing a base_dir don't overwrite each other.
+    /// Shows use `media.comments.md` inside their folder (no collision risk).
+    pub fn comments_path(&self) -> std::path::PathBuf {
+        match self {
+            MediaEntry::Movie(m) => {
+                let stem = m.video_path.file_stem().unwrap_or_default().to_string_lossy();
+                let dir = m.video_path.parent().unwrap_or(&m.base_dir);
+                dir.join(format!("{stem}.media.comments.md"))
+            }
+            MediaEntry::Show(s) => s.base_dir.join("media.comments.md"),
+        }
+    }
 }
 
 // ── Movie ─────────────────────────────────────────────────────────────────────
@@ -73,7 +88,7 @@ pub struct Movie {
     /// Absolute path to the video file.
     pub video_path: PathBuf,
     pub video_mtime: Option<DateTime<Utc>>,
-    /// Persisted state loaded from `movie.watched.toml`.
+    /// Persisted state loaded from `{video_stem}.watched.toml`.
     pub state: MovieState,
     /// Path where the cached TMDB poster is stored.
     /// Uses `{video_stem}.media.poster.jpg` so root-level movies (which share
