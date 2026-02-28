@@ -2265,6 +2265,7 @@ dependencies = [
  "chrono",
  "clap",
  "media_core",
+ "serde_json",
 ]
 
 [[package]]

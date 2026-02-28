@@ -4,3 +4,5 @@ pub mod done;
 pub mod undo;
 pub mod ls;
 pub mod note;
+pub mod get;
+pub mod is_watched;

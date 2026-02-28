@@ -1,7 +1,6 @@
 use std::path::Path;
 use media_core::MediaEntry;
-use media_core::sidecar::{load_comments_from_path, save_comments_to_path};
-use media_core::models::Comments;
+use media_core::sidecar::load_comments_from_path;
 use crate::fuzzy::{match_entry, print_ambiguous, print_not_found, MatchResult};
 use crate::output::Style;
 

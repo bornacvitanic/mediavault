@@ -104,6 +104,12 @@ enum Command {
         /// Mark all episodes watched (shows only)
         #[arg(long)]
         all: bool,
+        /// Mark all episodes up to and including this one, e.g. s01e06 (shows only)
+        #[arg(long, value_name = "EPISODE", conflicts_with = "all")]
+        through: Option<String>,
+        /// Mark all episodes in a season as watched, e.g. --season 2 (shows only)
+        #[arg(long, value_name = "N", conflicts_with_all = ["all", "through"])]
+        season: Option<u32>,
     },
 
     /// Unmark the last watched episode or movie.
@@ -151,6 +157,9 @@ enum Command {
         /// Shows only
         #[arg(long, conflicts_with = "movies")]
         shows: bool,
+        /// Output as JSON instead of human-readable text
+        #[arg(long)]
+        json: bool,
     },
 
     /// Open or print notes for an entry.
@@ -179,7 +188,70 @@ enum Command {
     ///   mv status
     ///   mv                       (same thing)
     #[command(visible_alias = "s")]
-    Status,
+    Status {
+        /// Output as JSON instead of human-readable text
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Query a single field for an entry. Designed for scripting and piping.
+    ///
+    /// Prints a bare value (no decoration) and exits 0 on success, 1 if not found.
+    ///
+    /// FIELDS (shows):
+    ///   next          Absolute path to next unwatched episode
+    ///   next-label    Episode code, e.g. "S01E04" (for status bars)
+    ///   watched       "true" or "false"
+    ///   progress      "6/24"
+    ///   fraction      "0.25" (watched/total as decimal)
+    ///   path          Base directory of the show
+    ///
+    /// FIELDS (movies):
+    ///   watched       "true" or "false"
+    ///   path          Absolute path to the video file
+    ///
+    /// EPISODE PATH (shows only):
+    ///   mv get frie s01e04 path   Absolute path to that episode file
+    ///
+    /// Examples:
+    ///   mv get frie next                   Path to next Frieren episode
+    ///   mv get frie next-label             Prints "S01E07"
+    ///   mv get frie progress               Prints "6/24"
+    ///   mv get frie fraction               Prints "0.25"
+    ///   mv get matrix watched              Prints "true" or "false"
+    ///   mv get frie s01e04 path            Path to that specific episode
+    ///   waybar: $(mv get frie next-label)
+    #[command(visible_alias = "g")]
+    Get {
+        /// Partial title to match
+        title: String,
+        /// Field to query, or an episode specifier (e.g. s01e04) when combined with a field
+        field_or_episode: String,
+        /// Field to query when field_or_episode is an episode specifier
+        field: Option<String>,
+    },
+
+    /// Check if an entry or episode is watched. Exits 0 if watched, 1 if not.
+    ///
+    /// Designed for use in shell conditionals — prints nothing by default.
+    /// Use --verbose to also print "watched" or "unwatched".
+    ///
+    /// Examples:
+    ///   mv is-watched matrix                   Exit 0 if watched
+    ///   mv is-watched frie s01e04              Exit 0 if that episode is watched
+    ///   mv is-watched matrix || mv next matrix  Play if not watched
+    ///   mv is-watched frie && echo "done!"
+    ///   mv is-watched matrix --verbose          Also prints "watched" or "unwatched"
+    #[command(name = "is-watched", visible_alias = "iw")]
+    IsWatched {
+        /// Partial title to match
+        title: String,
+        /// Specific episode to check, e.g. s01e04
+        episode: Option<String>,
+        /// Print "watched" or "unwatched" to stdout
+        #[arg(long, short)]
+        verbose: bool,
+    },
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -198,16 +270,20 @@ fn main() {
 
     let entries = media_core::scan_library(&library);
 
-    let result = match cli.command.unwrap_or(Command::Status) {
-        Command::Status => commands::status::run(&entries),
+    let result = match cli.command.unwrap_or(Command::Status { json: false }) {
+        Command::Status { json } => commands::status::run(&entries, json),
         Command::Next { title, episode, path_only } =>
             commands::next::run(&entries, title.as_deref(), episode.as_deref(), path_only),
-        Command::Done { title, episode, all } =>
-            commands::done::run(&entries, &title, episode.as_deref(), all),
+        Command::Done { title, episode, all, through, season } =>
+            commands::done::run(&entries, &title, episode.as_deref(), all, through.as_deref(), season),
         Command::Undo { title, episode } =>
             commands::undo::run(&entries, &title, episode.as_deref()),
-        Command::Ls { title, watching, unwatched, watched, movies, shows } =>
-            commands::ls::run(&entries, title.as_deref(), watching, unwatched, watched, movies, shows),
+        Command::Ls { title, watching, unwatched, watched, movies, shows, json } =>
+            commands::ls::run(&entries, title.as_deref(), watching, unwatched, watched, movies, shows, json),
+        Command::Get { title, field_or_episode, field } =>
+            commands::get::run(&entries, &title, &field_or_episode, field.as_deref()),
+        Command::IsWatched { title, episode, verbose } =>
+            commands::is_watched::run(&entries, &title, episode.as_deref(), verbose),
         Command::Note { title, show } =>
             commands::note::run(&entries, &title, show),
     };

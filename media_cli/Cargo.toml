@@ -11,3 +11,4 @@ path = "src/main.rs"
 media_core = { path = "../media_core" }
 clap = { version = "4", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
+serde_json = "1"

@@ -11,7 +11,7 @@ pub const VIDEO_EXTENSIONS: &[&str] = &[
 // ── Core entry types ──────────────────────────────────────────────────────────
 
 /// A single item in the managed library — either a movie or a show.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum MediaEntry {
     Movie(Movie),
     Show(Show),
@@ -79,7 +79,7 @@ impl MediaEntry {
 
 // ── Movie ─────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Movie {
     /// Display name derived from filename or folder name.
     pub title: String,
@@ -119,7 +119,7 @@ pub struct WatchEvent {
 
 // ── Show ──────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Show {
     pub title: String,
     pub base_dir: PathBuf,
@@ -157,14 +157,14 @@ impl Show {
 
 /// A season group — either a real subfolder (e.g. `Season 1`) or the synthetic
 /// "root" group used when episodes sit directly in the show folder.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Season {
     /// Display label, e.g. "Season 1" or the subfolder name.
     pub label: String,
     pub episodes: Vec<Episode>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Episode {
     /// Raw filename stem (fallback display if parsing fails).
     pub title: String,
@@ -250,7 +250,7 @@ pub struct Comments {
 
 /// Metadata extracted from a raw filename at scan time.
 /// Used to show tags on hover and in the detail panel.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct MediaMetadata {
     /// Clean human-readable title (noise stripped).
     pub clean_title: String,

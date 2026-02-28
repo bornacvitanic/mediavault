@@ -1,7 +1,10 @@
 use media_core::MediaEntry;
-use crate::output::{Style, entry_summary_line, entry_display_title, progress_bar};
+use crate::output::{Style, entry_display_title, progress_bar};
 
-pub fn run(entries: &[MediaEntry]) -> Result<(), String> {
+pub fn run(entries: &[MediaEntry], json: bool) -> Result<(), String> {
+    if json {
+        return run_json(entries);
+    }
     let st = Style::new();
 
     let total_movies = entries.iter().filter(|e| matches!(e, MediaEntry::Movie(_))).count();
@@ -115,4 +118,46 @@ fn truncate(s: &str, max: usize) -> String {
         let t: String = s.chars().take(max.saturating_sub(1)).collect();
         format!("{}…", t)
     }
+}
+
+fn run_json(entries: &[MediaEntry]) -> Result<(), String> {
+    let in_progress: Vec<serde_json::Value> = entries.iter().filter_map(|e| {
+        match e {
+            MediaEntry::Show(s) => {
+                let w = s.watched_count();
+                let total = s.episode_count();
+                if w == 0 || w >= total { return None; }
+                let title = if !s.metadata.clean_title.is_empty() { &s.metadata.clean_title } else { &s.title };
+                let next = s.bookmarks.next_up.as_ref()
+                    .and_then(|np| s.all_episodes().find(|ep| &ep.relative_path == np))
+                    .or_else(|| s.all_episodes().find(|ep| !s.bookmarks.is_watched(&ep.relative_path)));
+                Some(serde_json::json!({
+                    "title": title,
+                    "type": "show",
+                    "watched": w,
+                    "total": total,
+                    "fraction": w as f64 / total as f64,
+                    "next_label": next.map(|ep| {
+                        if ep.episode_num > 0 {
+                            format!("S{:02}E{:02}", ep.season_num, ep.episode_num)
+                        } else { ep.title.clone() }
+                    }),
+                    "next_path": next.map(|ep| ep.video_path.to_string_lossy().to_string()),
+                }))
+            }
+            MediaEntry::Movie(m) => {
+                if !m.state.watched { return None; }
+                None // movies aren't "in progress"
+            }
+        }
+    }).collect();
+
+    let summary = serde_json::json!({
+        "total_movies": entries.iter().filter(|e| matches!(e, MediaEntry::Movie(_))).count(),
+        "total_shows": entries.iter().filter(|e| matches!(e, MediaEntry::Show(_))).count(),
+        "in_progress": in_progress,
+    });
+
+    println!("{}", serde_json::to_string_pretty(&summary).unwrap());
+    Ok(())
 }
