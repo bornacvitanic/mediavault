@@ -2,5 +2,6 @@
 members = [
     "media_core",
     "media_gui",
+    "media_cli",
 ]
 resolver = "2"

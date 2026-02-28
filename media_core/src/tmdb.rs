@@ -39,6 +39,10 @@ pub struct AppConfig {
     /// Automatically mark an entry as watched when it is opened in the player.
     #[serde(default = "default_true")]
     pub auto_mark_watched: bool,
+    /// Last used library path — shared between GUI and CLI so both tools
+    /// can default to the same folder without extra configuration.
+    #[serde(default)]
+    pub library_path: String,
 }
 
 fn default_true() -> bool { true }
@@ -49,6 +53,7 @@ impl Default for AppConfig {
             tmdb_api_key: String::new(),
             show_posters: true,
             auto_mark_watched: true,
+            library_path: String::new(),
         }
     }
 }

@@ -396,6 +396,10 @@ impl eframe::App for App {
                 ui.separator();
                 if ui.button("Open Library...").clicked() {
                     if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                        self.config.library_path = path.to_string_lossy().into_owned();
+                        if let Err(e) = save_config(&self.config) {
+                            eprintln!("Failed to save config: {}", e);
+                        }
                         self.library_root = Some(path);
                         self.reload_library();
                     }
