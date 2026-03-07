@@ -19,8 +19,6 @@ use crate::models::{Comments, MovieState, ShowBookmarks};
 
 // Movie state filename is derived from the video stem at call time — see load/save_movie_state.
 const SHOW_BOOKMARKS_FILE: &str = "show.bookmarks.toml";
-const COMMENTS_FILE: &str = "media.comments.md";
-const COMMENTS_FILE_SUFFIX: &str = ".media.comments.md";
 
 // ── Movie state ───────────────────────────────────────────────────────────────
 
@@ -84,18 +82,6 @@ pub fn save_show_bookmarks(base_dir: &Path, bookmarks: &ShowBookmarks) -> std::i
 
 // ── Comments ──────────────────────────────────────────────────────────────────
 
-/// Comments path for a show or single-folder movie (uses base_dir).
-pub fn comments_path_dir(base_dir: &Path) -> std::path::PathBuf {
-    base_dir.join(COMMENTS_FILE)
-}
-
-/// Comments path for a root-level movie (uses video stem to avoid collisions).
-pub fn comments_path_video(video_path: &Path) -> std::path::PathBuf {
-    let stem = video_path.file_stem().unwrap_or_default().to_string_lossy();
-    let dir = video_path.parent().unwrap_or(Path::new("."));
-    dir.join(format!("{stem}{COMMENTS_FILE_SUFFIX}"))
-}
-
 /// Load comments from an explicit path (used when the path is pre-computed
 /// via `MediaEntry::comments_path()` to handle per-stem movie sidecars).
 pub fn load_comments_from_path(path: &Path) -> Comments {
@@ -114,13 +100,3 @@ pub fn save_comments_to_path(path: &Path, comments: &Comments) -> std::io::Resul
     fs::write(path, &comments.markdown)
 }
 
-pub fn load_comments(base_dir: &Path) -> Comments {
-    let path = base_dir.join(COMMENTS_FILE);
-    let markdown = fs::read_to_string(path).unwrap_or_default();
-    Comments { markdown }
-}
-
-pub fn save_comments(base_dir: &Path, comments: &Comments) -> std::io::Result<()> {
-    let path = base_dir.join(COMMENTS_FILE);
-    fs::write(path, &comments.markdown)
-}
