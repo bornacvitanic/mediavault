@@ -32,7 +32,9 @@ pub fn resolve_library(explicit: Option<PathBuf>) -> Result<PathBuf, String> {
 /// Heuristic: a directory is a media library if it contains video files or
 /// subdirectories that contain video files.
 pub fn looks_like_media_dir(dir: &Path) -> bool {
-    let Ok(entries) = std::fs::read_dir(dir) else { return false; };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_file() && crate::is_video(&path) {

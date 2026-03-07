@@ -50,10 +50,18 @@ fn score(entry: &MediaEntry, q: &str) -> Option<u8> {
 
     // Try both clean and raw title
     for title in [&clean, &raw] {
-        if title == q                         { return Some(0); }
-        if title.starts_with(q)               { return Some(1); }
-        if title.split_whitespace().any(|w| w.starts_with(q)) { return Some(2); }
-        if title.contains(q)                  { return Some(3); }
+        if title == q {
+            return Some(0);
+        }
+        if title.starts_with(q) {
+            return Some(1);
+        }
+        if title.split_whitespace().any(|w| w.starts_with(q)) {
+            return Some(2);
+        }
+        if title.contains(q) {
+            return Some(3);
+        }
     }
     None
 }
@@ -62,7 +70,9 @@ fn score(entry: &MediaEntry, q: &str) -> Option<u8> {
 pub fn parse_ep_spec(s: &str) -> Option<(u32, u32)> {
     let lo = s.to_lowercase();
     // Expect: s<digits>e<digits>
-    if !lo.starts_with('s') { return None; }
+    if !lo.starts_with('s') {
+        return None;
+    }
     let rest = &lo[1..];
     let e_pos = rest.find('e')?;
     let season: u32 = rest[..e_pos].parse().ok()?;
@@ -72,10 +82,18 @@ pub fn parse_ep_spec(s: &str) -> Option<(u32, u32)> {
 
 /// Print a "did you mean?" style ambiguity error listing candidates.
 pub fn print_ambiguous(query: &str, candidates: &[&MediaEntry]) {
-    eprintln!("  \"{}\" matches {} entries — be more specific:\n", query, candidates.len());
+    eprintln!(
+        "  \"{}\" matches {} entries — be more specific:\n",
+        query,
+        candidates.len()
+    );
     for e in candidates {
         let meta = e.metadata();
-        let title = if meta.clean_title.is_empty() { e.title() } else { &meta.clean_title };
+        let title = if meta.clean_title.is_empty() {
+            e.title()
+        } else {
+            &meta.clean_title
+        };
         eprintln!("    {}", title);
     }
 }

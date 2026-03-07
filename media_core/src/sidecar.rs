@@ -42,8 +42,7 @@ pub fn load_movie_state(video_path: &Path) -> Option<MovieState> {
 
 pub fn save_movie_state(video_path: &Path, state: &MovieState) -> std::io::Result<()> {
     let path = movie_state_path(video_path);
-    let raw = toml::to_string_pretty(state)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let raw = toml::to_string_pretty(state).map_err(std::io::Error::other)?;
     let content = format!(
         "# MediaVault — movie watch state\n\
          # You can edit this file manually. It will be re-read on next launch.\n\n\
@@ -68,8 +67,7 @@ pub fn load_show_bookmarks(base_dir: &Path) -> Option<ShowBookmarks> {
 
 pub fn save_show_bookmarks(base_dir: &Path, bookmarks: &ShowBookmarks) -> std::io::Result<()> {
     let path = base_dir.join(SHOW_BOOKMARKS_FILE);
-    let raw = toml::to_string_pretty(bookmarks)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let raw = toml::to_string_pretty(bookmarks).map_err(std::io::Error::other)?;
     let content = format!(
         "# MediaVault — show bookmark state\n\
          # watched_episodes lists relative paths of every fully-watched episode.\n\
@@ -99,4 +97,3 @@ pub fn save_comments_to_path(path: &Path, comments: &Comments) -> std::io::Resul
     }
     fs::write(path, &comments.markdown)
 }
-

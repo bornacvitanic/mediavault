@@ -1,12 +1,8 @@
-use media_core::{MediaEntry, save_movie_state, save_show_bookmarks};
 use crate::fuzzy::{match_entry, parse_ep_spec, print_ambiguous, print_not_found, MatchResult};
-use crate::output::{Style, entry_display_title};
+use crate::output::{entry_display_title, Style};
+use media_core::{save_movie_state, save_show_bookmarks, MediaEntry};
 
-pub fn run(
-    entries: &[MediaEntry],
-    query: &str,
-    episode: Option<&str>,
-) -> Result<(), String> {
+pub fn run(entries: &[MediaEntry], query: &str, episode: Option<&str>) -> Result<(), String> {
     let st = Style::new();
 
     let entry = match match_entry(entries, query) {
@@ -31,9 +27,12 @@ pub fn run(
             state.watched = false;
             // Remove the most recent watch history entry
             state.watch_history.pop();
-            save_movie_state(&m.video_path, &state)
-                .map_err(|e| format!("failed to save: {e}"))?;
-            println!("  {} {} unmarked as watched", st.yellow("↩"), entry_display_title(entry));
+            save_movie_state(&m.video_path, &state).map_err(|e| format!("failed to save: {e}"))?;
+            println!(
+                "  {} {} unmarked as watched",
+                st.yellow("↩"),
+                entry_display_title(entry)
+            );
         }
         MediaEntry::Show(s) => {
             let mut bookmarks = s.bookmarks.clone();
@@ -54,11 +53,15 @@ pub fn run(
                     .last()
                     .map(|ep| ep.relative_path.clone())
                     .ok_or_else(|| {
-                        format!("no watched episodes found for {}", entry_display_title(entry))
+                        format!(
+                            "no watched episodes found for {}",
+                            entry_display_title(entry)
+                        )
                     })?
             };
 
-            let ep = s.all_episodes()
+            let ep = s
+                .all_episodes()
                 .find(|ep| ep.relative_path == ep_rel)
                 .ok_or("episode not found")?;
 
@@ -74,7 +77,11 @@ pub fn run(
             save_show_bookmarks(&s.base_dir, &bookmarks)
                 .map_err(|e| format!("failed to save: {e}"))?;
 
-            println!("  {} {} unmarked as watched", st.yellow("↩"), ep.display_label());
+            println!(
+                "  {} {} unmarked as watched",
+                st.yellow("↩"),
+                ep.display_label()
+            );
             println!("  {} next up reset to {}", st.dim("→"), ep.display_label());
         }
     }

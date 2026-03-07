@@ -1,5 +1,5 @@
-use media_core::MediaEntry;
 use crate::fuzzy::{match_entry, parse_ep_spec, print_ambiguous, print_not_found, MatchResult};
+use media_core::MediaEntry;
 
 /// Check watch state via exit code. Exits 0 if watched, 1 if not.
 /// Prints nothing unless --verbose is set, so it composes cleanly in conditionals.
@@ -28,19 +28,18 @@ pub fn run(
             }
             m.state.watched
         }
-        MediaEntry::Show(s) => {
-            match episode {
-                Some(spec) => {
-                    let (season, ep_num) = parse_ep_spec(spec)
-                        .ok_or_else(|| format!("couldn't parse \"{spec}\" — use format s01e04"))?;
-                    let ep = s.all_episodes()
-                        .find(|ep| ep.season_num == season && ep.episode_num == ep_num)
-                        .ok_or_else(|| format!("episode s{:02}e{:02} not found", season, ep_num))?;
-                    s.bookmarks.is_watched(&ep.relative_path)
-                }
-                None => s.is_fully_watched(),
+        MediaEntry::Show(s) => match episode {
+            Some(spec) => {
+                let (season, ep_num) = parse_ep_spec(spec)
+                    .ok_or_else(|| format!("couldn't parse \"{spec}\" — use format s01e04"))?;
+                let ep = s
+                    .all_episodes()
+                    .find(|ep| ep.season_num == season && ep.episode_num == ep_num)
+                    .ok_or_else(|| format!("episode s{:02}e{:02} not found", season, ep_num))?;
+                s.bookmarks.is_watched(&ep.relative_path)
             }
-        }
+            None => s.is_fully_watched(),
+        },
     };
 
     if verbose {

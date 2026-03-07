@@ -1,5 +1,5 @@
-use media_core::MediaEntry;
 use crate::fuzzy::{match_entry, parse_ep_spec, print_ambiguous, print_not_found, MatchResult};
+use media_core::MediaEntry;
 
 /// Query a single field from an entry. Always prints a bare value — no colour,
 /// no decoration — so output can be used directly in scripts and status bars.
@@ -43,16 +43,21 @@ fn get_entry_field(entry: &MediaEntry, field: &str) -> Result<(), String> {
                 Ok(())
             }
             "title" => {
-                let t = if !m.metadata.clean_title.is_empty() { &m.metadata.clean_title } else { &m.title };
+                let t = if !m.metadata.clean_title.is_empty() {
+                    &m.metadata.clean_title
+                } else {
+                    &m.title
+                };
                 println!("{t}");
                 Ok(())
             }
-            "year" => {
-                match m.metadata.year {
-                    Some(y) => { println!("{y}"); Ok(()) }
-                    None => Err("no year metadata for this entry".into()),
+            "year" => match m.metadata.year {
+                Some(y) => {
+                    println!("{y}");
+                    Ok(())
                 }
-            }
+                None => Err("no year metadata for this entry".into()),
+            },
             other => Err(format!(
                 "unknown field \"{other}\" for movie\n  \
                  valid fields: watched, path, title, year"
@@ -102,7 +107,11 @@ fn get_entry_field(entry: &MediaEntry, field: &str) -> Result<(), String> {
                     Ok(())
                 }
                 "title" => {
-                    let t = if !s.metadata.clean_title.is_empty() { &s.metadata.clean_title } else { &s.title };
+                    let t = if !s.metadata.clean_title.is_empty() {
+                        &s.metadata.clean_title
+                    } else {
+                        &s.title
+                    };
                     println!("{t}");
                     Ok(())
                 }
@@ -128,7 +137,8 @@ fn get_episode_field(
         }
     };
 
-    let ep = show.all_episodes()
+    let ep = show
+        .all_episodes()
         .find(|ep| ep.season_num == season && ep.episode_num == ep_num)
         .ok_or_else(|| format!("episode s{:02}e{:02} not found", season, ep_num))?;
 
@@ -155,6 +165,8 @@ fn next_episode(s: &media_core::models::Show) -> Option<&media_core::models::Epi
     let next_rel = s.bookmarks.next_up.as_ref();
     match next_rel {
         Some(np) => s.all_episodes().find(|ep| &ep.relative_path == np),
-        None => s.all_episodes().find(|ep| !s.bookmarks.is_watched(&ep.relative_path)),
+        None => s
+            .all_episodes()
+            .find(|ep| !s.bookmarks.is_watched(&ep.relative_path)),
     }
 }

@@ -9,8 +9,8 @@ use natord::compare as natural_compare;
 
 use crate::{
     models::{Episode, MediaEntry, Movie, Season, Show, VIDEO_EXTENSIONS},
-    tmdb::{extract_metadata, extract_metadata_with_episodes, parse_episode},
     sidecar::{load_movie_state, load_show_bookmarks},
+    tmdb::{extract_metadata, extract_metadata_with_episodes, parse_episode},
 };
 
 // ── Public entry point ────────────────────────────────────────────────────────
@@ -136,7 +136,9 @@ fn show_from_dir(dir: &Path) -> Option<Show> {
         .iter()
         .flat_map(|s| s.episodes.iter())
         .filter_map(|ep| {
-            ep.video_path.file_stem().map(|s| s.to_string_lossy().into_owned())
+            ep.video_path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
         })
         .collect();
     let metadata = extract_metadata_with_episodes(&title, &episode_stems);
@@ -188,10 +190,7 @@ fn build_seasons(dir: &Path) -> Vec<Season> {
         });
         seasons.push(Season {
             label: "Episodes".to_string(),
-            episodes: root_videos
-                .iter()
-                .map(|p| make_episode(dir, p))
-                .collect(),
+            episodes: root_videos.iter().map(|p| make_episode(dir, p)).collect(),
         });
     }
 

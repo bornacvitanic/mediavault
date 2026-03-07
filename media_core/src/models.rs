@@ -68,7 +68,11 @@ impl MediaEntry {
     pub fn comments_path(&self) -> std::path::PathBuf {
         match self {
             MediaEntry::Movie(m) => {
-                let stem = m.video_path.file_stem().unwrap_or_default().to_string_lossy();
+                let stem = m
+                    .video_path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy();
                 let dir = m.video_path.parent().unwrap_or(&m.base_dir);
                 dir.join(format!("{stem}.media.comments.md"))
             }
@@ -273,12 +277,24 @@ impl MediaMetadata {
     /// Returns all present tags as short display strings, in a sensible order.
     pub fn tags(&self) -> Vec<String> {
         let mut tags = Vec::new();
-        if let Some((_n, label)) = &self.season { tags.push(label.clone()); }
-        if let Some(y) = self.year { tags.push(y.to_string()); }
-        if let Some(r) = &self.resolution { tags.push(r.clone()); }
-        if let Some(s) = &self.source { tags.push(s.clone()); }
-        if let Some(h) = &self.hdr { tags.push(h.clone()); }
-        if let Some(c) = &self.codec { tags.push(c.clone()); }
+        if let Some((_n, label)) = &self.season {
+            tags.push(label.clone());
+        }
+        if let Some(y) = self.year {
+            tags.push(y.to_string());
+        }
+        if let Some(r) = &self.resolution {
+            tags.push(r.clone());
+        }
+        if let Some(s) = &self.source {
+            tags.push(s.clone());
+        }
+        if let Some(h) = &self.hdr {
+            tags.push(h.clone());
+        }
+        if let Some(c) = &self.codec {
+            tags.push(c.clone());
+        }
         tags
     }
 }

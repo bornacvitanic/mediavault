@@ -1,8 +1,8 @@
-use media_core::{MediaEntry, save_movie_state, save_show_bookmarks};
-use media_core::models::WatchEvent;
-use chrono::Utc;
 use crate::fuzzy::{match_entry, parse_ep_spec, print_ambiguous, print_not_found, MatchResult};
-use crate::output::{Style, entry_display_title};
+use crate::output::{entry_display_title, Style};
+use chrono::Utc;
+use media_core::models::WatchEvent;
+use media_core::{save_movie_state, save_show_bookmarks, MediaEntry};
 
 pub fn run(
     entries: &[MediaEntry],
@@ -35,36 +35,52 @@ pub fn run(
             }
             let mut state = m.state.clone();
             state.watched = true;
-            state.watch_history.push(WatchEvent { watched_at: Utc::now(), note: None });
-            save_movie_state(&m.video_path, &state)
-                .map_err(|e| format!("failed to save: {e}"))?;
-            println!("  {} {} marked as watched", st.green("✓"), entry_display_title(entry));
+            state.watch_history.push(WatchEvent {
+                watched_at: Utc::now(),
+                note: None,
+            });
+            save_movie_state(&m.video_path, &state).map_err(|e| format!("failed to save: {e}"))?;
+            println!(
+                "  {} {} marked as watched",
+                st.green("✓"),
+                entry_display_title(entry)
+            );
         }
         MediaEntry::Show(s) => {
             let mut bookmarks = s.bookmarks.clone();
 
             // ── --season: mark all episodes in a given season ─────────────────
             if let Some(season_num) = season {
-                let eps: Vec<String> = s.all_episodes()
+                let eps: Vec<String> = s
+                    .all_episodes()
                     .filter(|ep| ep.season_num == season_num)
                     .map(|ep| ep.relative_path.clone())
                     .collect();
                 if eps.is_empty() {
-                    return Err(format!("season {} not found in {}", season_num, entry_display_title(entry)));
+                    return Err(format!(
+                        "season {} not found in {}",
+                        season_num,
+                        entry_display_title(entry)
+                    ));
                 }
                 let count = eps.len();
                 for rel in &eps {
                     bookmarks.mark_watched(rel, None);
                 }
                 // Advance next_up to first episode of next season
-                let next_after = s.all_episodes()
+                let next_after = s
+                    .all_episodes()
                     .find(|ep| ep.season_num > season_num)
                     .map(|ep| ep.relative_path.clone());
                 bookmarks.next_up = next_after;
                 save_show_bookmarks(&s.base_dir, &bookmarks)
                     .map_err(|e| format!("failed to save: {e}"))?;
-                println!("  {} season {} — all {} episodes marked as watched",
-                    st.green("✓"), season_num, count);
+                println!(
+                    "  {} season {} — all {} episodes marked as watched",
+                    st.green("✓"),
+                    season_num,
+                    count
+                );
                 return Ok(());
             }
 
@@ -91,13 +107,21 @@ pub fn run(
                     }
                 }
                 if !found {
-                    return Err(format!("episode s{:02}e{:02} not found", target_season, target_ep));
+                    return Err(format!(
+                        "episode s{:02}e{:02} not found",
+                        target_season, target_ep
+                    ));
                 }
                 bookmarks.next_up = following;
                 save_show_bookmarks(&s.base_dir, &bookmarks)
                     .map_err(|e| format!("failed to save: {e}"))?;
-                println!("  {} {} episodes marked as watched (through s{:02}e{:02})",
-                    st.green("✓"), marked, target_season, target_ep);
+                println!(
+                    "  {} {} episodes marked as watched (through s{:02}e{:02})",
+                    st.green("✓"),
+                    marked,
+                    target_season,
+                    target_ep
+                );
                 return Ok(());
             }
 
@@ -110,8 +134,12 @@ pub fn run(
                 bookmarks.next_up = None;
                 save_show_bookmarks(&s.base_dir, &bookmarks)
                     .map_err(|e| format!("failed to save: {e}"))?;
-                println!("  {} all {} episodes of {} marked as watched",
-                    st.green("✓"), count, entry_display_title(entry));
+                println!(
+                    "  {} all {} episodes of {} marked as watched",
+                    st.green("✓"),
+                    count,
+                    entry_display_title(entry)
+                );
                 return Ok(());
             }
 
@@ -136,7 +164,8 @@ pub fn run(
                     })?
             };
 
-            let ep = s.all_episodes()
+            let ep = s
+                .all_episodes()
                 .find(|ep| ep.relative_path == ep_rel)
                 .ok_or("episode not found")?;
 
@@ -145,7 +174,8 @@ pub fn run(
                 return Ok(());
             }
 
-            let following = s.all_episodes()
+            let following = s
+                .all_episodes()
                 .skip_while(|e| e.relative_path != ep_rel)
                 .nth(1)
                 .map(|e| e.relative_path.clone());
@@ -154,7 +184,11 @@ pub fn run(
             save_show_bookmarks(&s.base_dir, &bookmarks)
                 .map_err(|e| format!("failed to save: {e}"))?;
 
-            println!("  {} {} marked as watched", st.green("✓"), ep.display_label());
+            println!(
+                "  {} {} marked as watched",
+                st.green("✓"),
+                ep.display_label()
+            );
 
             // Show remaining count
             let new_watched = bookmarks.watched_episodes.len();

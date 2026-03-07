@@ -1,8 +1,8 @@
-pub mod status;
-pub mod next;
 pub mod done;
-pub mod undo;
-pub mod ls;
-pub mod note;
 pub mod get;
 pub mod is_watched;
+pub mod ls;
+pub mod next;
+pub mod note;
+pub mod status;
+pub mod undo;

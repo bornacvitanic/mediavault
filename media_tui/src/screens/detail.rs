@@ -1,22 +1,24 @@
+use crate::app::{display_title, App};
+use media_core::MediaEntry;
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    Frame,
 };
-use media_core::MediaEntry;
-use crate::app::{App, display_title};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
-    let Some(entry) = app.selected_entry() else { return; };
+    let Some(entry) = app.selected_entry() else {
+        return;
+    };
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),  // breadcrumb
-            Constraint::Min(0),     // content
-            Constraint::Length(3),  // footer
+            Constraint::Length(2), // breadcrumb
+            Constraint::Min(0),    // content
+            Constraint::Length(3), // footer
         ])
         .split(area);
 
@@ -24,7 +26,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
     match entry {
         MediaEntry::Movie(_) => draw_movie(f, app, entry, chunks[1]),
-        MediaEntry::Show(_)  => draw_show(f, app, entry, chunks[1]),
+        MediaEntry::Show(_) => draw_show(f, app, entry, chunks[1]),
     }
 
     draw_footer(f, app, entry, chunks[2]);
@@ -34,11 +36,19 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_breadcrumb(f: &mut Frame, entry: &MediaEntry, area: Rect) {
     let title = display_title(entry);
-    let kind = match entry { MediaEntry::Movie(_) => "Movie", MediaEntry::Show(_) => "Show" };
+    let kind = match entry {
+        MediaEntry::Movie(_) => "Movie",
+        MediaEntry::Show(_) => "Show",
+    };
     let line = Line::from(vec![
         Span::styled(" Library", Style::default().fg(Color::DarkGray)),
         Span::styled(" › ", Style::default().fg(Color::DarkGray)),
-        Span::styled(format!("{title} "), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format!("{title} "),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(format!("[{kind}]"), Style::default().fg(Color::DarkGray)),
     ]);
     f.render_widget(Paragraph::new(line), area);
@@ -47,37 +57,49 @@ fn draw_breadcrumb(f: &mut Frame, entry: &MediaEntry, area: Rect) {
 // ── Movie detail ──────────────────────────────────────────────────────────────
 
 fn draw_movie(f: &mut Frame, _app: &App, entry: &MediaEntry, area: Rect) {
-    let MediaEntry::Movie(m) = entry else { return; };
+    let MediaEntry::Movie(m) = entry else {
+        return;
+    };
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4),  // title + tags
-            Constraint::Length(2),  // spacer + status
-            Constraint::Min(0),     // watch history
+            Constraint::Length(4), // title + tags
+            Constraint::Length(2), // spacer + status
+            Constraint::Min(0),    // watch history
         ])
         .split(area);
 
     // Title + metadata tags
-    let title = if !m.metadata.clean_title.is_empty() { &m.metadata.clean_title } else { &m.title };
-    let year = m.metadata.year.map(|y| format!(" ({y})")).unwrap_or_default();
+    let title = if !m.metadata.clean_title.is_empty() {
+        &m.metadata.clean_title
+    } else {
+        &m.title
+    };
+    let year = m
+        .metadata
+        .year
+        .map(|y| format!(" ({y})"))
+        .unwrap_or_default();
     let tags = m.metadata.tags();
 
-    let mut lines: Vec<Line> = vec![
-        Line::from(vec![
-            Span::raw(" "),
-            Span::styled(
-                format!("{title}{year}"),
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-            ),
-        ]),
-    ];
+    let mut lines: Vec<Line> = vec![Line::from(vec![
+        Span::raw(" "),
+        Span::styled(
+            format!("{title}{year}"),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ])];
 
     if !tags.is_empty() {
         let tag_spans: Vec<Span> = std::iter::once(Span::raw(" "))
-            .chain(tags.iter().map(|t| {
-                Span::styled(format!("[{t}]"), Style::default().fg(Color::Cyan))
-            }).flat_map(|s| [s, Span::raw(" ")]))
+            .chain(
+                tags.iter()
+                    .map(|t| Span::styled(format!("[{t}]"), Style::default().fg(Color::Cyan)))
+                    .flat_map(|s| [s, Span::raw(" ")]),
+            )
             .collect();
         lines.push(Line::from(tag_spans));
     }
@@ -85,29 +107,37 @@ fn draw_movie(f: &mut Frame, _app: &App, entry: &MediaEntry, area: Rect) {
     lines.push(Line::raw(""));
 
     let status = if m.state.watched {
-        Line::from(Span::styled(" ✓  Watched", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)))
+        Line::from(Span::styled(
+            " ✓  Watched",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ))
     } else {
-        Line::from(Span::styled(" ○  Unwatched", Style::default().fg(Color::DarkGray)))
+        Line::from(Span::styled(
+            " ○  Unwatched",
+            Style::default().fg(Color::DarkGray),
+        ))
     };
     lines.push(status);
 
-    f.render_widget(
-        Paragraph::new(lines).wrap(Wrap { trim: false }),
-        chunks[0],
-    );
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), chunks[0]);
 
     // Watch history
     if !m.state.watch_history.is_empty() {
-        let hist_lines: Vec<Line> = std::iter::once(
-            Line::from(Span::styled(" Watch history", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)))
-        ).chain(
-            m.state.watch_history.iter().rev().take(8).map(|ev| {
-                Line::from(Span::styled(
-                    format!("   {}", ev.watched_at.format("%Y-%m-%d  %H:%M")),
-                    Style::default().fg(Color::DarkGray),
-                ))
-            })
-        ).collect();
+        let hist_lines: Vec<Line> = std::iter::once(Line::from(Span::styled(
+            " Watch history",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )))
+        .chain(m.state.watch_history.iter().rev().take(8).map(|ev| {
+            Line::from(Span::styled(
+                format!("   {}", ev.watched_at.format("%Y-%m-%d  %H:%M")),
+                Style::default().fg(Color::DarkGray),
+            ))
+        }))
+        .collect();
 
         let block = Block::default()
             .borders(Borders::TOP)
@@ -119,18 +149,24 @@ fn draw_movie(f: &mut Frame, _app: &App, entry: &MediaEntry, area: Rect) {
 // ── Show detail ───────────────────────────────────────────────────────────────
 
 fn draw_show(f: &mut Frame, app: &App, entry: &MediaEntry, area: Rect) {
-    let MediaEntry::Show(s) = entry else { return; };
+    let MediaEntry::Show(s) = entry else {
+        return;
+    };
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5),  // title + tags + progress bar
-            Constraint::Min(0),     // episode list
+            Constraint::Length(5), // title + tags + progress bar
+            Constraint::Min(0),    // episode list
         ])
         .split(area);
 
     // ── Header ────────────────────────────────────────────────────────────────
-    let title = if !s.metadata.clean_title.is_empty() { &s.metadata.clean_title } else { &s.title };
+    let title = if !s.metadata.clean_title.is_empty() {
+        &s.metadata.clean_title
+    } else {
+        &s.title
+    };
     let watched = s.watched_count();
     let total = s.episode_count();
     let tags = s.metadata.tags();
@@ -138,18 +174,23 @@ fn draw_show(f: &mut Frame, app: &App, entry: &MediaEntry, area: Rect) {
     let bar = progress_bar_styled(watched, total, 24);
     let frac = format!("  {watched}/{total}");
 
-    let mut header_lines: Vec<Line> = vec![
-        Line::from(vec![
-            Span::raw(" "),
-            Span::styled(title.as_str(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-        ]),
-    ];
+    let mut header_lines: Vec<Line> = vec![Line::from(vec![
+        Span::raw(" "),
+        Span::styled(
+            title.as_str(),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ])];
 
     if !tags.is_empty() {
         let tag_spans: Vec<Span> = std::iter::once(Span::raw(" "))
-            .chain(tags.iter().map(|t| {
-                Span::styled(format!("[{t}]"), Style::default().fg(Color::Cyan))
-            }).flat_map(|s| [s, Span::raw(" ")]))
+            .chain(
+                tags.iter()
+                    .map(|t| Span::styled(format!("[{t}]"), Style::default().fg(Color::Cyan)))
+                    .flat_map(|s| [s, Span::raw(" ")]),
+            )
             .collect();
         header_lines.push(Line::from(tag_spans));
     } else {
@@ -173,8 +214,11 @@ fn draw_show(f: &mut Frame, app: &App, entry: &MediaEntry, area: Rect) {
     ]));
 
     // Next up hint
-    let next_rel = s.bookmarks.next_up.as_ref().cloned()
-        .or_else(|| s.all_episodes().find(|ep| !s.bookmarks.is_watched(&ep.relative_path)).map(|ep| ep.relative_path.clone()));
+    let next_rel = s.bookmarks.next_up.as_ref().cloned().or_else(|| {
+        s.all_episodes()
+            .find(|ep| !s.bookmarks.is_watched(&ep.relative_path))
+            .map(|ep| ep.relative_path.clone())
+    });
     if let Some(ref nr) = next_rel {
         if let Some(ep) = s.all_episodes().find(|ep| ep.relative_path == *nr) {
             header_lines.push(Line::from(vec![
@@ -210,12 +254,12 @@ fn draw_show(f: &mut Frame, app: &App, entry: &MediaEntry, area: Rect) {
             // Season header when season changes
             if ep.season_num != current_season && ep.season_num > 0 {
                 current_season = ep.season_num;
-                items.push(
-                    ListItem::new(Line::from(Span::styled(
-                        format!(" Season {}", ep.season_num),
-                        Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
-                    )))
-                );
+                items.push(ListItem::new(Line::from(Span::styled(
+                    format!(" Season {}", ep.season_num),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                ))));
             }
 
             let (dot, dot_style) = if is_watched {
@@ -232,7 +276,9 @@ fn draw_show(f: &mut Frame, app: &App, entry: &MediaEntry, area: Rect) {
             };
 
             let label_style = if is_sel {
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else if is_watched {
                 Style::default().fg(Color::DarkGray)
             } else {
@@ -264,7 +310,11 @@ fn draw_show(f: &mut Frame, app: &App, entry: &MediaEntry, area: Rect) {
 
 fn draw_footer(f: &mut Frame, app: &App, entry: &MediaEntry, area: Rect) {
     let content = if let Some(msg) = &app.status {
-        let style = if msg.is_error { Style::default().fg(Color::Red) } else { Style::default().fg(Color::Green) };
+        let style = if msg.is_error {
+            Style::default().fg(Color::Red)
+        } else {
+            Style::default().fg(Color::Green)
+        };
         Line::from(Span::styled(format!(" {}", msg.text), style))
     } else {
         match entry {
@@ -303,13 +353,21 @@ fn hint(key: &str, desc: &str) -> Span<'static> {
 }
 
 fn progress_bar_styled(watched: usize, total: usize, width: usize) -> String {
-    if total == 0 { return "○".repeat(width); }
+    if total == 0 {
+        return "○".repeat(width);
+    }
     let filled = (watched * width) / total;
-    (0..width).map(|i| if i < filled { '●' } else { '○' }).collect()
+    (0..width)
+        .map(|i| if i < filled { '●' } else { '○' })
+        .collect()
 }
 
 fn compute_scroll(selected: usize, visible: usize, total: usize) -> usize {
-    if total <= visible { return 0; }
-    if selected < visible / 2 { return 0; }
+    if total <= visible {
+        return 0;
+    }
+    if selected < visible / 2 {
+        return 0;
+    }
     (selected - visible / 2).min(total - visible)
 }

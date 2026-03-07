@@ -1,7 +1,8 @@
-use media_core::MediaEntry;
 use crate::fuzzy::{match_entry, print_ambiguous, print_not_found, MatchResult};
-use crate::output::{Style, entry_summary_line, episode_line, progress_bar};
+use crate::output::{entry_summary_line, episode_line, progress_bar, Style};
+use media_core::MediaEntry;
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     entries: &[MediaEntry],
     title: Option<&str>,
@@ -34,37 +35,44 @@ pub fn run(
     }
 
     // ── Full library list ─────────────────────────────────────────────────────
-    let filtered: Vec<&MediaEntry> = entries.iter().filter(|e| {
-        // Kind filter
-        if movies && matches!(e, MediaEntry::Show(_)) { return false; }
-        if shows  && matches!(e, MediaEntry::Movie(_)) { return false; }
-        // Watch status filter
-        if watching {
-            return match e {
-                MediaEntry::Show(s) => {
-                    let w = s.watched_count();
-                    w > 0 && w < s.episode_count()
-                }
-                MediaEntry::Movie(_) => false,
-            };
-        }
-        if unwatched {
-            return match e {
-                MediaEntry::Movie(m) => !m.state.watched,
-                MediaEntry::Show(s) => s.watched_count() == 0,
-            };
-        }
-        if watched {
-            return match e {
-                MediaEntry::Movie(m) => m.state.watched,
-                MediaEntry::Show(s) => {
-                    let total = s.episode_count();
-                    total > 0 && s.watched_count() == total
-                }
-            };
-        }
-        true
-    }).collect();
+    let filtered: Vec<&MediaEntry> = entries
+        .iter()
+        .filter(|e| {
+            // Kind filter
+            if movies && matches!(e, MediaEntry::Show(_)) {
+                return false;
+            }
+            if shows && matches!(e, MediaEntry::Movie(_)) {
+                return false;
+            }
+            // Watch status filter
+            if watching {
+                return match e {
+                    MediaEntry::Show(s) => {
+                        let w = s.watched_count();
+                        w > 0 && w < s.episode_count()
+                    }
+                    MediaEntry::Movie(_) => false,
+                };
+            }
+            if unwatched {
+                return match e {
+                    MediaEntry::Movie(m) => !m.state.watched,
+                    MediaEntry::Show(s) => s.watched_count() == 0,
+                };
+            }
+            if watched {
+                return match e {
+                    MediaEntry::Movie(m) => m.state.watched,
+                    MediaEntry::Show(s) => {
+                        let total = s.episode_count();
+                        total > 0 && s.watched_count() == total
+                    }
+                };
+            }
+            true
+        })
+        .collect();
 
     if filtered.is_empty() {
         println!("  {}", st.dim("no entries match"));
@@ -72,10 +80,15 @@ pub fn run(
     }
 
     println!();
-    let label = if watching { "Watching" }
-        else if unwatched { "Unwatched" }
-        else if watched { "Watched" }
-        else { "Library" };
+    let label = if watching {
+        "Watching"
+    } else if unwatched {
+        "Unwatched"
+    } else if watched {
+        "Watched"
+    } else {
+        "Library"
+    };
 
     println!("  {}  ({} entries)", st.bold(label), filtered.len());
     println!("  {}", st.dim(&"─".repeat(60)));
@@ -92,7 +105,11 @@ fn show_detail(entry: &MediaEntry, st: &Style) -> Result<(), String> {
     println!();
     match entry {
         MediaEntry::Movie(m) => {
-            let title = if !m.metadata.clean_title.is_empty() { &m.metadata.clean_title } else { &m.title };
+            let title = if !m.metadata.clean_title.is_empty() {
+                &m.metadata.clean_title
+            } else {
+                &m.title
+            };
             println!("  {}", st.bold(title));
             if let Some(y) = m.metadata.year {
                 println!("  {}", st.dim(&format!("{}", y)));
@@ -112,13 +129,20 @@ fn show_detail(entry: &MediaEntry, st: &Style) -> Result<(), String> {
                 println!();
                 println!("  {}", st.dim("Watch history"));
                 for event in m.state.watch_history.iter().rev().take(5) {
-                    println!("  {}  {}", st.dim("·"),
-                        event.watched_at.format("%Y-%m-%d %H:%M"));
+                    println!(
+                        "  {}  {}",
+                        st.dim("·"),
+                        event.watched_at.format("%Y-%m-%d %H:%M")
+                    );
                 }
             }
         }
         MediaEntry::Show(s) => {
-            let title = if !s.metadata.clean_title.is_empty() { &s.metadata.clean_title } else { &s.title };
+            let title = if !s.metadata.clean_title.is_empty() {
+                &s.metadata.clean_title
+            } else {
+                &s.title
+            };
             let watched = s.watched_count();
             let total = s.episode_count();
             println!("  {}", st.bold(title));
@@ -131,7 +155,7 @@ fn show_detail(entry: &MediaEntry, st: &Style) -> Result<(), String> {
             println!();
 
             // Next up
-            let next_rel = s.bookmarks.next_up.as_ref().or_else(|| None);
+            let next_rel = s.bookmarks.next_up.as_ref().or(None);
             let next_rel = next_rel.cloned().or_else(|| {
                 s.all_episodes()
                     .find(|ep| !s.bookmarks.is_watched(&ep.relative_path))
@@ -172,37 +196,57 @@ fn run_json(
     if let Some(q) = title {
         let entry = match match_entry(entries, q) {
             MatchResult::One(e) => e,
-            MatchResult::Many(candidates) => { print_ambiguous(q, &candidates); return Err("ambiguous".into()); }
-            MatchResult::None => { print_not_found(q); return Err("no match".into()); }
+            MatchResult::Many(candidates) => {
+                print_ambiguous(q, &candidates);
+                return Err("ambiguous".into());
+            }
+            MatchResult::None => {
+                print_not_found(q);
+                return Err("no match".into());
+            }
         };
         let v = entry_to_json(entry);
         println!("{}", serde_json::to_string_pretty(&v).unwrap());
         return Ok(());
     }
 
-    let filtered: Vec<serde_json::Value> = entries.iter().filter(|e| {
-        if movies && matches!(e, MediaEntry::Show(_)) { return false; }
-        if shows  && matches!(e, MediaEntry::Movie(_)) { return false; }
-        if watching {
-            return match e {
-                MediaEntry::Show(s) => { let w = s.watched_count(); w > 0 && w < s.episode_count() }
-                MediaEntry::Movie(_) => false,
-            };
-        }
-        if unwatched {
-            return match e {
-                MediaEntry::Movie(m) => !m.state.watched,
-                MediaEntry::Show(s) => s.watched_count() == 0,
-            };
-        }
-        if watched {
-            return match e {
-                MediaEntry::Movie(m) => m.state.watched,
-                MediaEntry::Show(s) => { let t = s.episode_count(); t > 0 && s.watched_count() == t }
-            };
-        }
-        true
-    }).map(entry_to_json).collect();
+    let filtered: Vec<serde_json::Value> = entries
+        .iter()
+        .filter(|e| {
+            if movies && matches!(e, MediaEntry::Show(_)) {
+                return false;
+            }
+            if shows && matches!(e, MediaEntry::Movie(_)) {
+                return false;
+            }
+            if watching {
+                return match e {
+                    MediaEntry::Show(s) => {
+                        let w = s.watched_count();
+                        w > 0 && w < s.episode_count()
+                    }
+                    MediaEntry::Movie(_) => false,
+                };
+            }
+            if unwatched {
+                return match e {
+                    MediaEntry::Movie(m) => !m.state.watched,
+                    MediaEntry::Show(s) => s.watched_count() == 0,
+                };
+            }
+            if watched {
+                return match e {
+                    MediaEntry::Movie(m) => m.state.watched,
+                    MediaEntry::Show(s) => {
+                        let t = s.episode_count();
+                        t > 0 && s.watched_count() == t
+                    }
+                };
+            }
+            true
+        })
+        .map(entry_to_json)
+        .collect();
 
     println!("{}", serde_json::to_string_pretty(&filtered).unwrap());
     Ok(())
@@ -211,7 +255,11 @@ fn run_json(
 fn entry_to_json(entry: &MediaEntry) -> serde_json::Value {
     match entry {
         MediaEntry::Movie(m) => {
-            let title = if !m.metadata.clean_title.is_empty() { &m.metadata.clean_title } else { &m.title };
+            let title = if !m.metadata.clean_title.is_empty() {
+                &m.metadata.clean_title
+            } else {
+                &m.title
+            };
             serde_json::json!({
                 "type": "movie",
                 "title": title,
@@ -223,22 +271,35 @@ fn entry_to_json(entry: &MediaEntry) -> serde_json::Value {
             })
         }
         MediaEntry::Show(s) => {
-            let title = if !s.metadata.clean_title.is_empty() { &s.metadata.clean_title } else { &s.title };
+            let title = if !s.metadata.clean_title.is_empty() {
+                &s.metadata.clean_title
+            } else {
+                &s.title
+            };
             let watched = s.watched_count();
             let total = s.episode_count();
-            let next = s.bookmarks.next_up.as_ref()
+            let next = s
+                .bookmarks
+                .next_up
+                .as_ref()
                 .and_then(|np| s.all_episodes().find(|ep| &ep.relative_path == np))
-                .or_else(|| s.all_episodes().find(|ep| !s.bookmarks.is_watched(&ep.relative_path)));
-            let episodes: Vec<serde_json::Value> = s.all_episodes().map(|ep| {
-                serde_json::json!({
-                    "label": ep.display_label(),
-                    "season": ep.season_num,
-                    "episode": ep.episode_num,
-                    "title": ep.episode_title,
-                    "watched": s.bookmarks.is_watched(&ep.relative_path),
-                    "path": ep.video_path.to_string_lossy(),
+                .or_else(|| {
+                    s.all_episodes()
+                        .find(|ep| !s.bookmarks.is_watched(&ep.relative_path))
+                });
+            let episodes: Vec<serde_json::Value> = s
+                .all_episodes()
+                .map(|ep| {
+                    serde_json::json!({
+                        "label": ep.display_label(),
+                        "season": ep.season_num,
+                        "episode": ep.episode_num,
+                        "title": ep.episode_title,
+                        "watched": s.bookmarks.is_watched(&ep.relative_path),
+                        "path": ep.video_path.to_string_lossy(),
+                    })
                 })
-            }).collect();
+                .collect();
             serde_json::json!({
                 "type": "show",
                 "title": title,

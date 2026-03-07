@@ -1,29 +1,32 @@
 mod app;
-mod screens;
 mod input;
+mod screens;
 mod ui;
 
-use std::io;
-use std::path::PathBuf;
-use std::time::Duration;
+use crossterm::event::KeyEventKind;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use crossterm::event::KeyEventKind;
 use ratatui::{backend::CrosstermBackend, Terminal};
+use std::io;
+use std::path::PathBuf;
+use std::time::Duration;
 
-use app::{App, Action};
+use app::{Action, App};
 
 fn main() -> anyhow::Result<()> {
     // Parse --library / -l flag manually to avoid pulling in clap
     let args: Vec<String> = std::env::args().collect();
-    let explicit = args.iter().position(|a| a == "--library" || a == "-l")
+    let explicit = args
+        .iter()
+        .position(|a| a == "--library" || a == "-l")
         .and_then(|pos| args.get(pos + 1))
         .map(PathBuf::from);
-    let library = media_core::resolve_library(explicit)
-        .map_err(|e| anyhow::anyhow!("{e}\nrun mediavault-tui from your media folder, or pass --library <path>"))?;
+    let library = media_core::resolve_library(explicit).map_err(|e| {
+        anyhow::anyhow!("{e}\nrun mediavault-tui from your media folder, or pass --library <path>")
+    })?;
     let entries = media_core::scan_library(&library);
 
     // ── Terminal setup ────────────────────────────────────────────────────────
@@ -39,7 +42,11 @@ fn main() -> anyhow::Result<()> {
 
     // ── Restore terminal ──────────────────────────────────────────────────────
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     if let Err(e) = result {
@@ -74,4 +81,3 @@ fn run<B: ratatui::backend::Backend>(
         }
     }
 }
-

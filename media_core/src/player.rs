@@ -8,7 +8,5 @@ pub fn open_in_player(path: &Path) {
         .spawn();
 
     #[cfg(not(target_os = "windows"))]
-    let _ = std::process::Command::new("xdg-open")
-        .arg(path)
-        .spawn();
+    let _ = std::process::Command::new("xdg-open").arg(path).spawn();
 }

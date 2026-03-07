@@ -3,8 +3,8 @@ mod fuzzy;
 mod output;
 mod player;
 
-use std::path::PathBuf;
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 // ── CLI definition ────────────────────────────────────────────────────────────
 
@@ -272,20 +272,57 @@ fn main() {
 
     let result = match cli.command.unwrap_or(Command::Status { json: false }) {
         Command::Status { json } => commands::status::run(&entries, json),
-        Command::Next { title, episode, path_only } =>
-            commands::next::run(&entries, title.as_deref(), episode.as_deref(), path_only),
-        Command::Done { title, episode, all, through, season } =>
-            commands::done::run(&entries, &title, episode.as_deref(), all, through.as_deref(), season),
-        Command::Undo { title, episode } =>
-            commands::undo::run(&entries, &title, episode.as_deref()),
-        Command::Ls { title, watching, unwatched, watched, movies, shows, json } =>
-            commands::ls::run(&entries, title.as_deref(), watching, unwatched, watched, movies, shows, json),
-        Command::Get { title, field_or_episode, field } =>
-            commands::get::run(&entries, &title, &field_or_episode, field.as_deref()),
-        Command::IsWatched { title, episode, verbose } =>
-            commands::is_watched::run(&entries, &title, episode.as_deref(), verbose),
-        Command::Note { title, show } =>
-            commands::note::run(&entries, &title, show),
+        Command::Next {
+            title,
+            episode,
+            path_only,
+        } => commands::next::run(&entries, title.as_deref(), episode.as_deref(), path_only),
+        Command::Done {
+            title,
+            episode,
+            all,
+            through,
+            season,
+        } => commands::done::run(
+            &entries,
+            &title,
+            episode.as_deref(),
+            all,
+            through.as_deref(),
+            season,
+        ),
+        Command::Undo { title, episode } => {
+            commands::undo::run(&entries, &title, episode.as_deref())
+        }
+        Command::Ls {
+            title,
+            watching,
+            unwatched,
+            watched,
+            movies,
+            shows,
+            json,
+        } => commands::ls::run(
+            &entries,
+            title.as_deref(),
+            watching,
+            unwatched,
+            watched,
+            movies,
+            shows,
+            json,
+        ),
+        Command::Get {
+            title,
+            field_or_episode,
+            field,
+        } => commands::get::run(&entries, &title, &field_or_episode, field.as_deref()),
+        Command::IsWatched {
+            title,
+            episode,
+            verbose,
+        } => commands::is_watched::run(&entries, &title, episode.as_deref(), verbose),
+        Command::Note { title, show } => commands::note::run(&entries, &title, show),
     };
 
     if let Err(e) = result {
@@ -293,4 +330,3 @@ fn main() {
         std::process::exit(1);
     }
 }
-

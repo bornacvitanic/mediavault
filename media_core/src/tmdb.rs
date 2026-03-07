@@ -20,8 +20,7 @@ pub fn config_path() -> std::io::Result<std::path::PathBuf> {
     let base = std::env::var("APPDATA")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| {
-            dirs_next::config_dir()
-                .unwrap_or_else(|| std::path::PathBuf::from("."))
+            dirs_next::config_dir().unwrap_or_else(|| std::path::PathBuf::from("."))
         });
     let dir = base.join("mediavault");
     fs::create_dir_all(&dir)?;
@@ -45,7 +44,9 @@ pub struct AppConfig {
     pub library_path: String,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -72,8 +73,7 @@ pub fn load_config() -> AppConfig {
 
 pub fn save_config(cfg: &AppConfig) -> std::io::Result<()> {
     let path = config_path()?;
-    let raw = toml::to_string_pretty(cfg)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let raw = toml::to_string_pretty(cfg).map_err(std::io::Error::other)?;
     let content = format!(
         "# MediaVault configuration\n\
          # Get a free TMDB API key at https://www.themoviedb.org/settings/api\n\n\
@@ -101,37 +101,111 @@ struct SearchHit {
 /// metadata, not part of the actual title. Matched case-insensitively.
 const NOISE_TOKENS: &[&str] = &[
     // Resolutions
-    "480p", "576p", "720p", "1080p", "1080i", "2160p", "4k", "8k",
+    "480p",
+    "576p",
+    "720p",
+    "1080p",
+    "1080i",
+    "2160p",
+    "4k",
+    "8k",
     // Sources
-    "bluray", "blu-ray", "bdrip", "bdremux", "remux",
-    "webrip", "web-rip", "webdl", "web-dl", "web", "hdtv", "dvdrip",
-    "dvd", "hdrip", "hdcam", "cam", "scr", "r5",
+    "bluray",
+    "blu-ray",
+    "bdrip",
+    "bdremux",
+    "remux",
+    "webrip",
+    "web-rip",
+    "webdl",
+    "web-dl",
+    "web",
+    "hdtv",
+    "dvdrip",
+    "dvd",
+    "hdrip",
+    "hdcam",
+    "cam",
+    "scr",
+    "r5",
     // HDR / colour
-    "hdr", "hdr10", "dv", "dolbyvision", "hlg", "sdr",
+    "hdr",
+    "hdr10",
+    "dv",
+    "dolbyvision",
+    "hlg",
+    "sdr",
     // Codecs
-    "x264", "x265", "h264", "h265", "hevc", "avc", "xvid", "divx",
-    "av1", "vp9", "10bit", "8bit",
+    "x264",
+    "x265",
+    "h264",
+    "h265",
+    "hevc",
+    "avc",
+    "xvid",
+    "divx",
+    "av1",
+    "vp9",
+    "10bit",
+    "8bit",
     // Audio
-    "aac", "ac3", "dd5", "dts", "dtshd", "atmos", "truehd", "flac",
-    "mp3", "opus", "ddp", "eac3",
+    "aac",
+    "ac3",
+    "dd5",
+    "dts",
+    "dtshd",
+    "atmos",
+    "truehd",
+    "flac",
+    "mp3",
+    "opus",
+    "ddp",
+    "eac3",
     // Languages / subs
-    "multi", "dual", "dubbed", "sub", "subbed", "eng", "ita", "fra",
-    "ger", "spa", "por", "rus", "jpn", "japanese", "english",
+    "multi",
+    "dual",
+    "dubbed",
+    "sub",
+    "subbed",
+    "eng",
+    "ita",
+    "fra",
+    "ger",
+    "spa",
+    "por",
+    "rus",
+    "jpn",
+    "japanese",
+    "english",
     // Misc release tags
-    "proper", "repack", "extended", "theatrical", "unrated",
-    "remastered", "retail", "internal", "limited", "batch", "specials",
+    "proper",
+    "repack",
+    "extended",
+    "theatrical",
+    "unrated",
+    "remastered",
+    "retail",
+    "internal",
+    "limited",
+    "batch",
+    "specials",
 ];
 
 fn is_year(tok: &str) -> bool {
     tok.len() == 4
         && tok.chars().all(|c| c.is_ascii_digit())
-        && tok.parse::<u32>().map(|y| (1900..=2100).contains(&y)).unwrap_or(false)
+        && tok
+            .parse::<u32>()
+            .map(|y| (1900..=2100).contains(&y))
+            .unwrap_or(false)
 }
 
 /// Returns true if `tok` is a season marker that should truncate the title
 /// for TMDB queries: "season", "saison", or bare S-number like "s01"/"s1".
 fn is_season_token(tok: &str) -> bool {
-    if tok == "season" || tok == "saison" { return true; }
+    if tok == "season" || tok == "saison" {
+        return true;
+    }
     if tok.len() >= 2 && tok.len() <= 4 && tok.starts_with('s') {
         let rest = &tok[1..];
         if rest.chars().all(|c| c.is_ascii_digit()) && rest.parse::<u32>().is_ok() {
@@ -173,7 +247,8 @@ pub fn extract_season(raw: &str) -> Option<(u32, String)> {
             if rest.chars().all(|c| c.is_ascii_digit()) {
                 if let Ok(num) = rest.parse::<u32>() {
                     // Make sure the next token is not an episode marker (E01)
-                    let next_is_ep = tokens.get(i + 1)
+                    let next_is_ep = tokens
+                        .get(i + 1)
                         .map(|t| t.to_lowercase().starts_with('e') && t.len() <= 4)
                         .unwrap_or(false);
                     if !next_is_ep {
@@ -187,8 +262,7 @@ pub fn extract_season(raw: &str) -> Option<(u32, String)> {
         if lo.len() >= 4 {
             if let Some(e_pos) = lo.find('e') {
                 let s_part = &lo[..e_pos];
-                if s_part.starts_with('s') {
-                    let n = &s_part[1..];
+                if let Some(n) = s_part.strip_prefix('s') {
                     if n.chars().all(|c| c.is_ascii_digit()) {
                         if let Ok(num) = n.parse::<u32>() {
                             return Some((num, format!("S{num}")));
@@ -209,7 +283,9 @@ fn strip_brackets(s: &str) -> String {
     for ch in s.chars() {
         match ch {
             '[' => depth += 1,
-            ']' => { depth = depth.saturating_sub(1); }
+            ']' => {
+                depth = depth.saturating_sub(1);
+            }
             _ if depth == 0 => out.push(ch),
             _ => {}
         }
@@ -242,19 +318,21 @@ pub fn clean_title(raw: &str) -> String {
     // Some release names use Windows-filename-safe lookalikes, e.g.
     // U+A789 MODIFIER LETTER COLON (꞉) instead of ':' which is illegal in
     // Windows filenames. TMDB will not match these without normalization.
-    let normalized: String = raw.chars().map(|c| match c {
-        '\u{A789}' | '\u{FE13}' | '\u{FE55}' | '\u{FF1A}' => ':',  // colon lookalikes
-        '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' | '\u{2014}' | '\u{2015}'
-        | '\u{FE58}' | '\u{FF0D}' => '-',                            // dash lookalikes
-        '\u{2018}' | '\u{2019}' | '\u{FF07}' => '\'',               // apostrophe lookalikes
-        '\u{FF01}' => '!',
-        '\u{FF1F}' => '?',
-        '\u{FF06}' => '&',
-        _ => c,
-    }).collect();
+    let normalized: String = raw
+        .chars()
+        .map(|c| match c {
+            '\u{A789}' | '\u{FE13}' | '\u{FE55}' | '\u{FF1A}' => ':', // colon lookalikes
+            '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' | '\u{2014}' | '\u{2015}'
+            | '\u{FE58}' | '\u{FF0D}' => '-', // dash lookalikes
+            '\u{2018}' | '\u{2019}' | '\u{FF07}' => '\'',             // apostrophe lookalikes
+            '\u{FF01}' => '!',
+            '\u{FF1F}' => '?',
+            '\u{FF06}' => '&',
+            _ => c,
+        })
+        .collect();
     let raw = normalized.as_str();
     let s = raw.trim();
-
 
     // 1. Strip leading `[domain.com] - ` style site prefix.
     //    Only strip if the bracket content looks like a domain (contains '.').
@@ -262,9 +340,7 @@ pub fn clean_title(raw: &str) -> String {
         if let Some(close) = s.find(']') {
             let bracket_content = &s[1..close];
             if bracket_content.contains('.') {
-                s[close + 1..]
-                    .trim_start_matches(|c: char| c == ' ' || c == '-')
-                    .trim()
+                s[close + 1..].trim_start_matches([' ', '-']).trim()
             } else {
                 s
             }
@@ -385,7 +461,12 @@ pub fn fetch_poster(
         if query.is_empty() {
             continue;
         }
-        for (endpoint, yr) in &[(primary, year), (other, year), (primary, None), (other, None)] {
+        for (endpoint, yr) in &[
+            (primary, year),
+            (other, year),
+            (primary, None),
+            (other, None),
+        ] {
             if let Some(poster_path) = search_tmdb(endpoint, query, *yr, api_key)? {
                 let image_url = format!("{TMDB_IMAGE_BASE}{poster_path}");
                 let mut reader = ureq::get(&image_url).call()?.into_reader();
@@ -441,8 +522,14 @@ fn expand_token(tok: &str) -> Vec<String> {
             let suffix = &tok[digit_start..];
             // Check suffix is a resolution: 3-4 digits + p/i
             let suffix_lo = suffix.to_lowercase();
-            let digits: String = suffix_lo.chars().take_while(|c| c.is_ascii_digit()).collect();
-            let rest: String = suffix_lo.chars().skip_while(|c| c.is_ascii_digit()).collect();
+            let digits: String = suffix_lo
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            let rest: String = suffix_lo
+                .chars()
+                .skip_while(|c| c.is_ascii_digit())
+                .collect();
             if (digits.len() == 3 || digits.len() == 4)
                 && (rest == "p" || rest == "i" || rest.is_empty())
             {
@@ -465,14 +552,16 @@ fn bracket_tokens(s: &str) -> Vec<String> {
     for ch in s.chars() {
         match ch {
             '[' | '(' => {
-                if depth == 0 { current.clear(); }
+                if depth == 0 {
+                    current.clear();
+                }
                 depth += 1;
             }
             ']' | ')' => {
                 depth = depth.saturating_sub(1);
                 if depth == 0 && !current.trim().is_empty() {
                     for tok in current.split_whitespace() {
-                        let t = tok.replace(['.','_'], " ");
+                        let t = tok.replace(['.', '_'], " ");
                         for word in t.split_whitespace() {
                             for part in expand_token(word) {
                                 out.push(part);
@@ -515,11 +604,15 @@ fn scan_tokens(
                 "480p" | "576p" => Some("480p".into()),
                 _ => None,
             };
-            if resolution.is_some() { continue; }
+            if resolution.is_some() {
+                continue;
+            }
         }
         if source.is_none() {
             *source = match clean {
-                "bluray" | "blu-ray" | "bdremux" | "remux" | "bdrip" | "bd" => Some("BluRay".into()),
+                "bluray" | "blu-ray" | "bdremux" | "remux" | "bdrip" | "bd" => {
+                    Some("BluRay".into())
+                }
                 "webrip" | "web-rip" => Some("WEBRip".into()),
                 "webdl" | "web-dl" | "web" => Some("WEB-DL".into()),
                 "hdtv" => Some("HDTV".into()),
@@ -527,7 +620,9 @@ fn scan_tokens(
                 "hdrip" => Some("HDRip".into()),
                 _ => None,
             };
-            if source.is_some() { continue; }
+            if source.is_some() {
+                continue;
+            }
         }
         if hdr.is_none() {
             *hdr = match clean {
@@ -538,7 +633,9 @@ fn scan_tokens(
                 "hlg" => Some("HLG".into()),
                 _ => None,
             };
-            if hdr.is_some() { continue; }
+            if hdr.is_some() {
+                continue;
+            }
         }
         if codec.is_none() {
             *codec = match clean {
@@ -554,13 +651,15 @@ fn scan_tokens(
 
 /// Normalise Unicode lookalike punctuation (Windows-safe substitutes) to ASCII.
 fn normalise_unicode(raw: &str) -> String {
-    raw.chars().map(|c| match c {
-        '\u{A789}' | '\u{FE13}' | '\u{FE55}' | '\u{FF1A}' => ':',
-        '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' | '\u{2014}' | '\u{2015}'
-        | '\u{FE58}' | '\u{FF0D}' => '-',
-        '\u{2018}' | '\u{2019}' | '\u{FF07}' => '\'',
-        _ => c,
-    }).collect()
+    raw.chars()
+        .map(|c| match c {
+            '\u{A789}' | '\u{FE13}' | '\u{FE55}' | '\u{FF1A}' => ':',
+            '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' | '\u{2014}' | '\u{2015}'
+            | '\u{FE58}' | '\u{FF0D}' => '-',
+            '\u{2018}' | '\u{2019}' | '\u{FF07}' => '\'',
+            _ => c,
+        })
+        .collect()
 }
 
 /// Extract all useful metadata from a raw folder/filename.
@@ -598,21 +697,27 @@ pub fn extract_metadata_with_episodes(
     // token expansion so e.g. `BD1080p` outside brackets also gets split.
     let outside = strip_brackets(&normalized).replace(['.', '_'], " ");
     scan_tokens(
-        outside.split_whitespace().flat_map(|s| expand_token(s)),
-        &mut year, &mut resolution, &mut source, &mut hdr, &mut codec,
+        outside.split_whitespace().flat_map(expand_token),
+        &mut year,
+        &mut resolution,
+        &mut source,
+        &mut hdr,
+        &mut codec,
     );
 
     // Pass 2: tokens inside bracket groups — covers [BD][1080p][HEVC 10bit x265]
     scan_tokens(
         bracket_tokens(&normalized).into_iter(),
-        &mut year, &mut resolution, &mut source, &mut hdr, &mut codec,
+        &mut year,
+        &mut resolution,
+        &mut source,
+        &mut hdr,
+        &mut codec,
     );
 
     // Pass 3: episode filename fallback when folder gave us nothing useful.
     // Find tokens that appear in ALL episode stems (i.e. are release-wide constants).
-    if (resolution.is_none() && source.is_none() && codec.is_none())
-        && !episode_stems.is_empty()
-    {
+    if (resolution.is_none() && source.is_none() && codec.is_none()) && !episode_stems.is_empty() {
         // Collect token sets for each episode stem (bracket contents + outer tokens)
         let token_sets: Vec<std::collections::HashSet<String>> = episode_stems
             .iter()
@@ -620,7 +725,10 @@ pub fn extract_metadata_with_episodes(
                 let n = normalise_unicode(stem);
                 let mut set = std::collections::HashSet::new();
                 // outside tokens (with fused expansion)
-                for t in strip_brackets(&n).replace(['.','_']," ").split_whitespace() {
+                for t in strip_brackets(&n)
+                    .replace(['.', '_'], " ")
+                    .split_whitespace()
+                {
                     for part in expand_token(t) {
                         set.insert(part.to_lowercase());
                     }
@@ -643,7 +751,11 @@ pub fn extract_metadata_with_episodes(
 
             scan_tokens(
                 common.into_iter(),
-                &mut year, &mut resolution, &mut source, &mut hdr, &mut codec,
+                &mut year,
+                &mut resolution,
+                &mut source,
+                &mut hdr,
+                &mut codec,
             );
         }
     }
@@ -705,9 +817,13 @@ pub fn parse_episode(raw_stem: &str) -> ParsedEpisode {
     // Strip leading [Group] tag like `[DB]` or `[DiabloTripleA]`.
     let s = if s.trim_start().starts_with('[') {
         if let Some(close) = s.find(']') {
-            s[close + 1..].trim_start_matches(|c: char| c == ' ' || c == '-').to_string()
-        } else { s }
-    } else { s };
+            s[close + 1..].trim_start_matches([' ', '-']).to_string()
+        } else {
+            s
+        }
+    } else {
+        s
+    };
 
     // Strip trailing CRC hash like `[D5ACD9A8]` (8 hex chars).
     let s = regex_strip_trailing_hash(&s);
@@ -746,8 +862,7 @@ fn regex_strip_trailing_hash(s: &str) -> String {
     if trimmed.ends_with(']') {
         if let Some(open) = trimmed.rfind('[') {
             let inner = &trimmed[open + 1..trimmed.len() - 1];
-            if inner.len() >= 6 && inner.len() <= 8
-                && inner.chars().all(|c| c.is_ascii_hexdigit())
+            if inner.len() >= 6 && inner.len() <= 8 && inner.chars().all(|c| c.is_ascii_hexdigit())
             {
                 return trimmed[..open].trim_end().to_string();
             }
@@ -761,17 +876,43 @@ fn regex_strip_trailing_hash(s: &str) -> String {
 /// (resolution, codec, source, etc.) at the end of the string.
 fn strip_trailing_release_tags(s: &str) -> String {
     let noise_re = [
-        "1080p","720p","2160p","4k","x265","x264","hevc","h264","avc",
-        "bluray","web-dl","webrip","web","bd","hdr","dv","aac","ac3",
-        "ddp","flac","10bit","dual audio","dual","japanese","english",
+        "1080p",
+        "720p",
+        "2160p",
+        "4k",
+        "x265",
+        "x264",
+        "hevc",
+        "h264",
+        "avc",
+        "bluray",
+        "web-dl",
+        "webrip",
+        "web",
+        "bd",
+        "hdr",
+        "dv",
+        "aac",
+        "ac3",
+        "ddp",
+        "flac",
+        "10bit",
+        "dual audio",
+        "dual",
+        "japanese",
+        "english",
     ];
     let mut result = s.trim().to_string();
     // Repeatedly strip trailing bracket groups that contain noise words.
     loop {
         let trimmed = result.trim_end().to_string();
-        let (open_ch, _close_ch) = if trimmed.ends_with(')') { ('(', ')') }
-                                   else if trimmed.ends_with(']') { ('[', ']') }
-                                   else { break; };
+        let (open_ch, _close_ch) = if trimmed.ends_with(')') {
+            ('(', ')')
+        } else if trimmed.ends_with(']') {
+            ('[', ']')
+        } else {
+            break;
+        };
         if let Some(open) = trimmed.rfind(open_ch) {
             let inner = trimmed[open + 1..trimmed.len() - 1].to_lowercase();
             let is_noise = noise_re.iter().any(|n| inner.contains(n));
@@ -793,34 +934,47 @@ fn find_sxexx(s: &str) -> Option<(u32, u32, &str)> {
     let bytes = s.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i].to_ascii_lowercase() == b's' {
+        if bytes[i].eq_ignore_ascii_case(&b's') {
             let start = i;
             i += 1;
             // Consume season digits (1-2 digits)
             let s_start = i;
-            while i < bytes.len() && bytes[i].is_ascii_digit() { i += 1; }
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
             let s_end = i;
-            if s_end == s_start || s_end - s_start > 2 { continue; }
+            if s_end == s_start || s_end - s_start > 2 {
+                continue;
+            }
             // Optional whitespace
-            while i < bytes.len() && bytes[i] == b' ' { i += 1; }
+            while i < bytes.len() && bytes[i] == b' ' {
+                i += 1;
+            }
             // Expect 'e'
-            if i >= bytes.len() || bytes[i].to_ascii_lowercase() != b'e' {
-                i = start + 1; continue;
+            if i >= bytes.len() || !bytes[i].eq_ignore_ascii_case(&b'e') {
+                i = start + 1;
+                continue;
             }
             i += 1;
             // Consume episode digits (2-3 digits)
             let e_start = i;
-            while i < bytes.len() && bytes[i].is_ascii_digit() { i += 1; }
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
             let e_end = i;
-            if e_end == e_start || e_end - e_start > 3 { i = start + 1; continue; }
+            if e_end == e_start || e_end - e_start > 3 {
+                i = start + 1;
+                continue;
+            }
 
             let season: u32 = s[s_start..s_end].parse().unwrap_or(1);
             let episode: u32 = s[e_start..e_end].parse().unwrap_or(0);
             // Make sure we're at a word boundary (not mid-word like "season")
             if start > 0 && bytes[start - 1].is_ascii_alphabetic() {
-                i = start + 1; continue;
+                i = start + 1;
+                continue;
             }
-            let after = s[i..].trim_start_matches(|c: char| c == ' ' || c == '-' || c == '–');
+            let after = s[i..].trim_start_matches([' ', '-', '–']);
             return Some((season, episode, after));
         }
         i += 1;
@@ -832,12 +986,14 @@ fn find_sxexx(s: &str) -> Option<(u32, u32, &str)> {
 /// e.g. `Show - 08`, `Show_-_08_`
 fn find_bare_episode_number(s: &str) -> Option<u32> {
     // Look for a dash/separator followed by 2-3 digits at end of meaningful content.
-    let parts: Vec<&str> = s.split(|c| c == '-' || c == '–').collect();
+    let parts: Vec<&str> = s.split(['-', '–']).collect();
     for part in parts.iter().rev() {
         let t = part.trim();
         if t.len() >= 2 && t.len() <= 3 && t.chars().all(|c| c.is_ascii_digit()) {
             if let Ok(n) = t.parse::<u32>() {
-                if n > 0 && n < 1000 { return Some(n); }
+                if n > 0 && n < 1000 {
+                    return Some(n);
+                }
             }
         }
     }
@@ -850,7 +1006,9 @@ fn clean_episode_title(s: &str) -> String {
     // Strip leading dashes and whitespace
     let s = s.trim_matches(|c: char| c == '-' || c == '–' || c.is_whitespace());
     // If it starts with a bracket it's probably a release tag, not a title
-    if s.starts_with('[') || s.starts_with('(') { return String::new(); }
+    if s.starts_with('[') || s.starts_with('(') {
+        return String::new();
+    }
     // Collapse internal whitespace
     let words: Vec<&str> = s.split_whitespace().collect();
     words.join(" ")
