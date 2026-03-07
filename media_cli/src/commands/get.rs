@@ -109,7 +109,7 @@ fn get_entry_field(entry: &MediaEntry, field: &str) -> Result<(), String> {
                 other => Err(format!(
                     "unknown field \"{other}\" for show\n  \
                      valid fields: next, next-label, watched, progress, fraction, path, title\n  \
-                     episode path: mv get <title> <s01e04> path"
+                     episode path: mediavault-cli get <title> <s01e04> path"
                 )),
             }
         }

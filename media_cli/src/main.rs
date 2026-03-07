@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 
 // ── CLI definition ────────────────────────────────────────────────────────────
 
-/// MediaVault — terminal media tracker
+/// MediaVault CLI — terminal media tracker
 ///
 /// Run with no arguments inside (or pointing at) your media folder for a
 /// quick status overview of what you're currently watching.
@@ -20,31 +20,31 @@ use clap::{Parser, Subcommand};
 ///   candidates and asked to be more specific.
 ///
 /// EXAMPLES
-///   mediavault                       Show in-progress entries and next episodes
-///   mediavault next                  Resume the most recently touched entry
-///   mediavault next frie             Play next episode of Frieren
-///   mediavault next matrix           Play The Matrix
-///   mediavault done frie             Mark next unwatched Frieren episode as watched
-///   mediavault done frie s01e04      Mark a specific episode as watched
-///   mediavault undo frie             Unmark the last watched Frieren episode
-///   mediavault ls                    List everything in the library
-///   mediavault ls --watching         Only in-progress entries
-///   mediavault ls frie               Episode list and progress for Frieren
-///   mediavault note frie             Open Frieren notes in $EDITOR
-///   mediavault note frie --show      Print existing notes to stdout
+///   mediavault-cli                       Show in-progress entries and next episodes
+///   mediavault-cli next                  Resume the most recently touched entry
+///   mediavault-cli next frie             Play next episode of Frieren
+///   mediavault-cli next matrix           Play The Matrix
+///   mediavault-cli done frie             Mark next unwatched Frieren episode as watched
+///   mediavault-cli done frie s01e04      Mark a specific episode as watched
+///   mediavault-cli undo frie             Unmark the last watched Frieren episode
+///   mediavault-cli ls                    List everything in the library
+///   mediavault-cli ls --watching         Only in-progress entries
+///   mediavault-cli ls frie               Episode list and progress for Frieren
+///   mediavault-cli note frie             Open Frieren notes in $EDITOR
+///   mediavault-cli note frie --show      Print existing notes to stdout
 #[derive(Parser)]
 #[command(
-    name = "mediavault",
-    bin_name = "mv",
+    name = "mediavault-cli",
+    bin_name = "mediavault-cli",
     version,
     about = "Terminal media tracker",
     long_about = None,
     after_help = "\
 TIPS
-  • Run `mediavault` with no args inside your media folder — it auto-detects
+  • Run `mediavault-cli` with no args inside your media folder — it auto-detects
     the library from the current directory or your saved config.
-  • `mediavault next` with no title resumes the most recently touched entry.
-  • Pipe `mediavault next frie` to a player: mpv \"$(mediavault next frie)\"
+  • `mediavault-cli next` with no title resumes the most recently touched entry.
+  • Pipe to a player: mpv \"$(mediavault-cli next frie)\"
   • All sidecar files (.watched.toml, .media.comments.md) are human-editable
     plain text sitting next to your media files.
 "
@@ -67,13 +67,13 @@ enum Command {
     /// With a TITLE, fuzzy-matches against your library.
     ///
     /// When stdout is not a terminal (pipe mode), prints the video path
-    /// instead of launching a player — useful for: mpv "$(mv next frie)"
+    /// instead of launching a player — useful for: mpv "$(mediavault-cli next frie)"
     ///
     /// Examples:
-    ///   mv next                  Resume most recent
-    ///   mv next frie             Play next Frieren episode
-    ///   mv next matrix           Play The Matrix
-    ///   mv next frie s01e06      Play a specific episode
+    ///   mediavault-cli next                  Resume most recent
+    ///   mediavault-cli next frie             Play next Frieren episode
+    ///   mediavault-cli next matrix           Play The Matrix
+    ///   mediavault-cli next frie s01e06      Play a specific episode
     #[command(visible_alias = "n")]
     Next {
         /// Partial title to match (case-insensitive)
@@ -91,10 +91,10 @@ enum Command {
     /// or the movie itself. Use `undo` to reverse.
     ///
     /// Examples:
-    ///   mv done frie             Mark next Frieren episode watched
-    ///   mv done frie s01e04      Mark a specific episode watched
-    ///   mv done matrix           Mark The Matrix watched
-    ///   mv done frie --all       Mark all Frieren episodes watched
+    ///   mediavault-cli done frie             Mark next Frieren episode watched
+    ///   mediavault-cli done frie s01e04      Mark a specific episode watched
+    ///   mediavault-cli done matrix           Mark The Matrix watched
+    ///   mediavault-cli done frie --all       Mark all Frieren episodes watched
     #[command(visible_alias = "d", visible_alias = "watch")]
     Done {
         /// Partial title to match
@@ -115,8 +115,8 @@ enum Command {
     /// Unmark the last watched episode or movie.
     ///
     /// Examples:
-    ///   mv undo frie             Unmark last watched Frieren episode
-    ///   mv undo matrix           Mark The Matrix unwatched
+    ///   mediavault-cli undo frie             Unmark last watched Frieren episode
+    ///   mediavault-cli undo matrix           Mark The Matrix unwatched
     #[command(visible_alias = "u")]
     Undo {
         /// Partial title to match
@@ -131,13 +131,13 @@ enum Command {
     /// shows the full episode list for that show or movie detail.
     ///
     /// Examples:
-    ///   mv ls                    List everything
-    ///   mv ls --watching         Only in-progress entries
-    ///   mv ls --unwatched        Only unwatched entries
-    ///   mv ls --watched          Only finished entries
-    ///   mv ls frie               Episode list for Frieren
-    ///   mv ls --movies           Movies only
-    ///   mv ls --shows            Shows only
+    ///   mediavault-cli ls                    List everything
+    ///   mediavault-cli ls --watching         Only in-progress entries
+    ///   mediavault-cli ls --unwatched        Only unwatched entries
+    ///   mediavault-cli ls --watched          Only finished entries
+    ///   mediavault-cli ls frie               Episode list for Frieren
+    ///   mediavault-cli ls --movies           Movies only
+    ///   mediavault-cli ls --shows            Shows only
     #[command(visible_alias = "l", visible_alias = "list")]
     Ls {
         /// Partial title — shows detail for that entry
@@ -168,9 +168,9 @@ enum Command {
     /// With --show, prints existing notes to stdout.
     ///
     /// Examples:
-    ///   mv note frie             Edit Frieren notes in $EDITOR
-    ///   mv note frie --show      Print existing notes
-    ///   mv note matrix           Edit movie notes
+    ///   mediavault-cli note frie             Edit Frieren notes in $EDITOR
+    ///   mediavault-cli note frie --show      Print existing notes
+    ///   mediavault-cli note matrix           Edit movie notes
     #[command(visible_alias = "notes")]
     Note {
         /// Partial title to match
@@ -185,8 +185,8 @@ enum Command {
     /// This is also what runs when you invoke mediavault with no arguments.
     ///
     /// Examples:
-    ///   mv status
-    ///   mv                       (same thing)
+    ///   mediavault-cli status
+    ///   mediavault-cli            (same thing)
     #[command(visible_alias = "s")]
     Status {
         /// Output as JSON instead of human-readable text
@@ -211,16 +211,16 @@ enum Command {
     ///   path          Absolute path to the video file
     ///
     /// EPISODE PATH (shows only):
-    ///   mv get frie s01e04 path   Absolute path to that episode file
+    ///   mediavault-cli get frie s01e04 path   Absolute path to that episode file
     ///
     /// Examples:
-    ///   mv get frie next                   Path to next Frieren episode
-    ///   mv get frie next-label             Prints "S01E07"
-    ///   mv get frie progress               Prints "6/24"
-    ///   mv get frie fraction               Prints "0.25"
-    ///   mv get matrix watched              Prints "true" or "false"
-    ///   mv get frie s01e04 path            Path to that specific episode
-    ///   waybar: $(mv get frie next-label)
+    ///   mediavault-cli get frie next                   Path to next Frieren episode
+    ///   mediavault-cli get frie next-label             Prints "S01E07"
+    ///   mediavault-cli get frie progress               Prints "6/24"
+    ///   mediavault-cli get frie fraction               Prints "0.25"
+    ///   mediavault-cli get matrix watched              Prints "true" or "false"
+    ///   mediavault-cli get frie s01e04 path            Path to that specific episode
+    ///   waybar: $(mediavault-cli get frie next-label)
     #[command(visible_alias = "g")]
     Get {
         /// Partial title to match
@@ -237,11 +237,11 @@ enum Command {
     /// Use --verbose to also print "watched" or "unwatched".
     ///
     /// Examples:
-    ///   mv is-watched matrix                   Exit 0 if watched
-    ///   mv is-watched frie s01e04              Exit 0 if that episode is watched
-    ///   mv is-watched matrix || mv next matrix  Play if not watched
-    ///   mv is-watched frie && echo "done!"
-    ///   mv is-watched matrix --verbose          Also prints "watched" or "unwatched"
+    ///   mediavault-cli is-watched matrix                   Exit 0 if watched
+    ///   mediavault-cli is-watched frie s01e04              Exit 0 if that episode is watched
+    ///   mediavault-cli is-watched matrix || mediavault-cli next matrix  Play if not watched
+    ///   mediavault-cli is-watched frie && echo "done!"
+    ///   mediavault-cli is-watched matrix --verbose          Also prints "watched" or "unwatched"
     #[command(name = "is-watched", visible_alias = "iw")]
     IsWatched {
         /// Partial title to match
@@ -259,7 +259,7 @@ enum Command {
 fn main() {
     let cli = Cli::parse();
 
-    let library = match resolve_library(cli.library) {
+    let library = match media_core::resolve_library(cli.library) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("error: {e}");
@@ -294,57 +294,3 @@ fn main() {
     }
 }
 
-// ── Library resolution ────────────────────────────────────────────────────────
-
-/// Resolve the library path in priority order:
-///   1. --library flag
-///   2. Current directory (if it contains media files or media subdirs)
-///   3. Path saved in MediaVault config
-fn resolve_library(flag: Option<PathBuf>) -> Result<PathBuf, String> {
-    if let Some(p) = flag {
-        return if p.is_dir() {
-            Ok(p)
-        } else {
-            Err(format!("{} is not a directory", p.display()))
-        };
-    }
-
-    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    if looks_like_media_dir(&cwd) {
-        return Ok(cwd);
-    }
-
-    // Fall back to saved config path
-    let config = media_core::tmdb::load_config();  // shared config.toml
-    if !config.library_path.is_empty() {
-        let p = PathBuf::from(&config.library_path);
-        if p.is_dir() {
-            return Ok(p);
-        }
-    }
-
-    Err("could not find a media library".into())
-}
-
-/// Heuristic: a directory is a media library if it contains video files or
-/// subdirectories that contain video files.
-fn looks_like_media_dir(dir: &std::path::Path) -> bool {
-    let Ok(entries) = std::fs::read_dir(dir) else { return false; };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() && media_core::is_video(&path) {
-            return true;
-        }
-        if path.is_dir() {
-            if let Ok(sub) = std::fs::read_dir(&path) {
-                if sub.flatten().any(|e| {
-                    let p = e.path();
-                    p.is_file() && media_core::is_video(&p)
-                }) {
-                    return true;
-                }
-            }
-        }
-    }
-    false
-}

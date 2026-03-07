@@ -25,7 +25,7 @@ pub fn run(entries: &[MediaEntry], query: &str, show_only: bool) -> Result<(), S
         let comments = load_comments_from_path(&comments_path);
         if comments.markdown.trim().is_empty() {
             println!("  {}", st.dim("no notes yet"));
-            println!("  hint: run `mv note {}` to add some", query);
+            println!("  hint: run `mediavault-cli note {}` to add some", query);
         } else {
             println!("{}", comments.markdown);
         }

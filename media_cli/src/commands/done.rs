@@ -30,7 +30,7 @@ pub fn run(
         MediaEntry::Movie(m) => {
             if m.state.watched {
                 println!("  {} already marked as watched", entry_display_title(entry));
-                println!("  hint: use `mv undo {}` to unmark", query);
+                println!("  hint: use `mediavault-cli undo {}` to unmark", query);
                 return Ok(());
             }
             let mut state = m.state.clone();
@@ -132,7 +132,7 @@ pub fn run(
                             .map(|ep| ep.relative_path.clone())
                     })
                     .ok_or_else(|| {
-                        format!("all episodes are already watched — use `mv undo {}` to rewind", query)
+                        format!("all episodes are already watched — use `mediavault-cli undo {}` to rewind", query)
                     })?
             };
 

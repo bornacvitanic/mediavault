@@ -43,7 +43,7 @@ pub fn run(entries: &[MediaEntry], json: bool) -> Result<(), String> {
     if in_progress.is_empty() && recent_movies.is_empty() {
         println!("  {}  nothing in progress", st.dim("–"));
         println!();
-        println!("  {}  run `mv ls` to browse the library", st.dim("hint"));
+        println!("  {}  run `mediavault-cli ls` to browse the library", st.dim("hint"));
         println!();
         return Ok(());
     }
@@ -79,7 +79,7 @@ pub fn run(entries: &[MediaEntry], json: bool) -> Result<(), String> {
         }
         println!();
         println!(
-            "  {}  mv next <title>  to resume · mv next  to resume most recent",
+            "  {}  mediavault-cli next <title>  to resume · mediavault-cli next  to resume most recent",
             st.dim("hint")
         );
         println!();

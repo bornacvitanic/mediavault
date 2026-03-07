@@ -2372,6 +2372,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "media_cli"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "media_core",
+ "serde_json",
+]
+
+[[package]]
 name = "media_core"
 version = "0.1.0"
 dependencies = [
@@ -2409,16 +2419,6 @@ dependencies = [
  "crossterm",
  "media_core",
  "ratatui",
-]
-
-[[package]]
-name = "mediavault"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "clap",
- "media_core",
- "serde_json",
 ]
 
 [[package]]

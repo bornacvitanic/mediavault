@@ -31,7 +31,7 @@ pub fn run(
                 Some(e) => e,
                 None => {
                     eprintln!("  nothing in progress");
-                    eprintln!("  hint: specify a title, or use `mv ls` to browse");
+                    eprintln!("  hint: specify a title, or use `mediavault-cli ls` to browse");
                     return Ok(());
                 }
             }
@@ -71,7 +71,7 @@ pub fn run(
                             .find(|ep| !s.bookmarks.is_watched(&ep.relative_path))
                             .map(|ep| ep.relative_path.clone())
                     })
-                    .ok_or_else(|| format!("all episodes of {} are watched — use `mv undo` to rewind", entry_display_title(entry)))?
+                    .ok_or_else(|| format!("all episodes of {} are watched — use `mediavault-cli undo` to rewind", entry_display_title(entry)))?
             };
 
             let ep = s.all_episodes()

@@ -83,5 +83,5 @@ pub fn print_ambiguous(query: &str, candidates: &[&MediaEntry]) {
 /// Print a "not found" error with a hint.
 pub fn print_not_found(query: &str) {
     eprintln!("  no entry matches \"{}\"", query);
-    eprintln!("  hint: run `mv ls` to see all titles, or try a shorter search term");
+    eprintln!("  hint: run `mediavault-cli ls` to see all titles, or try a shorter search term");
 }
