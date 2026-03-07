@@ -4,7 +4,6 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    process::Command,
     thread,
 };
 
@@ -668,7 +667,7 @@ impl eframe::App for App {
                             match entry {
                                 MediaEntry::Movie(m) => {
                                     let vp = m.video_path.clone();
-                                    open_in_player(&vp);
+                                    media_core::open_in_player(&vp);
                                     if auto_mark && !m.state.watched {
                                         if let MediaEntry::Movie(m2) = &mut self.entries[entry_idx] {
                                             m2.state.watched = true;
@@ -689,7 +688,7 @@ impl eframe::App for App {
                                             .map(|ep| ep.video_path.clone());
                                         let bd = s.base_dir.clone();
                                         if let Some(vp) = ep_vp {
-                                            open_in_player(&vp);
+                                            media_core::open_in_player(&vp);
                                             if auto_mark {
                                                 if let MediaEntry::Show(s2) = &mut self.entries[entry_idx] {
                                                     let following = s2.all_episodes()
@@ -1123,7 +1122,7 @@ fn render_movie_detail(
     // ── Actions ───────────────────────────────────────────────────────────────
     ui.horizontal(|ui| {
         if ui.button("Open in Player").clicked() {
-            open_in_player(&movie.video_path);
+            media_core::open_in_player(&movie.video_path);
             if auto_mark_watched && !movie.state.watched {
                 movie.state.watched = true;
                 movie.state.watch_history.push(WatchEvent { watched_at: Utc::now(), note: None });
@@ -1249,7 +1248,7 @@ fn render_show_detail(
                     .flat_map(|(_, eps)| eps.iter())
                     .find(|(rp, _, _, _, _, _)| rp == np)
                 {
-                    open_in_player(vp);
+                    media_core::open_in_player(vp);
                     if auto_mark_watched {
                         if let Some(show) = entries.iter_mut().find_map(|e| {
                             if let MediaEntry::Show(s) = e { if s.base_dir == base_dir { Some(s) } else { None } } else { None }
@@ -1370,7 +1369,7 @@ fn render_show_detail(
         }
     }
     if let Some((ref vp, ref ep_rel)) = open_path {
-        open_in_player(vp);
+        media_core::open_in_player(vp);
         if auto_mark_watched {
             if let Some(show) = entries.iter_mut().find_map(|e| {
                 if let MediaEntry::Show(s) = e { if s.base_dir == base_dir { Some(s) } else { None } } else { None }
@@ -1475,17 +1474,6 @@ fn release_year_key(entry: &MediaEntry) -> u32 {
     entry.metadata().year.unwrap_or(0)
 }
 
-fn open_in_player(path: &Path) {
-    // Uses the Windows default file association, which is typically VLC or
-    // Windows Media Player depending on the user's setup.
-    #[cfg(target_os = "windows")]
-    let _ = Command::new("cmd")
-        .args(["/c", "start", "", &path.to_string_lossy()])
-        .spawn();
-
-    #[cfg(not(target_os = "windows"))]
-    let _ = Command::new("xdg-open").arg(path).spawn();
-}
 
 fn load_image_from_disk(path: &Path) -> Result<ColorImage, Box<dyn std::error::Error>> {
     let data = std::fs::read(path)?;

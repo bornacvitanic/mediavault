@@ -387,7 +387,7 @@ impl App {
         match &self.entries[idx] {
             MediaEntry::Movie(m) => {
                 let vp = m.video_path.clone();
-                open_in_player(&vp);
+                media_core::open_in_player(&vp);
                 // Auto-mark watched
                 if !m.state.watched {
                     if let MediaEntry::Movie(m2) = &mut self.entries[idx] {
@@ -420,7 +420,7 @@ impl App {
                         .find(|ep| ep.relative_path == ep_rel)
                         .map(|ep| ep.video_path.clone());
                     let Some(vp) = vp else { return; };
-                    open_in_player(&vp);
+                    media_core::open_in_player(&vp);
 
                     let following = s2.all_episodes()
                         .skip_while(|ep| ep.relative_path != ep_rel)
@@ -579,11 +579,3 @@ fn ep_count(entry: &MediaEntry) -> usize {
     match entry { MediaEntry::Show(s) => s.episode_count(), _ => 0 }
 }
 
-pub fn open_in_player(path: &std::path::Path) {
-    #[cfg(target_os = "windows")]
-    let _ = std::process::Command::new("cmd")
-        .args(["/c", "start", "", &path.to_string_lossy()])
-        .spawn();
-    #[cfg(not(target_os = "windows"))]
-    let _ = std::process::Command::new("xdg-open").arg(path).spawn();
-}

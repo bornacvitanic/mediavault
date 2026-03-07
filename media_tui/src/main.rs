@@ -17,7 +17,13 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use app::{App, Action};
 
 fn main() -> anyhow::Result<()> {
-    let library = resolve_library()?;
+    // Parse --library / -l flag manually to avoid pulling in clap
+    let args: Vec<String> = std::env::args().collect();
+    let explicit = args.iter().position(|a| a == "--library" || a == "-l")
+        .and_then(|pos| args.get(pos + 1))
+        .map(PathBuf::from);
+    let library = media_core::resolve_library(explicit)
+        .map_err(|e| anyhow::anyhow!("{e}\nrun mediavault-tui from your media folder, or pass --library <path>"))?;
     let entries = media_core::scan_library(&library);
 
     // ── Terminal setup ────────────────────────────────────────────────────────
@@ -69,51 +75,3 @@ fn run<B: ratatui::backend::Backend>(
     }
 }
 
-// ── Library resolution ────────────────────────────────────────────────────────
-
-fn resolve_library() -> anyhow::Result<PathBuf> {
-    // 1. --library / -l flag (simple manual parse — avoids pulling in clap)
-    let args: Vec<String> = std::env::args().collect();
-    if let Some(pos) = args.iter().position(|a| a == "--library" || a == "-l") {
-        if let Some(p) = args.get(pos + 1) {
-            let path = PathBuf::from(p);
-            if path.is_dir() { return Ok(path); }
-            anyhow::bail!("{} is not a directory", p);
-        }
-    }
-
-    // 2. Current directory if it looks like a media folder
-    let cwd = std::env::current_dir()?;
-    if looks_like_media_dir(&cwd) {
-        return Ok(cwd);
-    }
-
-    // 3. Saved config path (shared with GUI and CLI)
-    let config = media_core::tmdb::load_config();
-    if !config.library_path.is_empty() {
-        let p = PathBuf::from(&config.library_path);
-        if p.is_dir() { return Ok(p); }
-    }
-
-    anyhow::bail!(
-        "could not find a media library\n\
-         run mvt from your media folder, or pass --library <path>"
-    )
-}
-
-fn looks_like_media_dir(dir: &std::path::Path) -> bool {
-    let Ok(rd) = std::fs::read_dir(dir) else { return false; };
-    for entry in rd.flatten() {
-        let p = entry.path();
-        if p.is_file() && media_core::is_video(&p) { return true; }
-        if p.is_dir() {
-            if let Ok(sub) = std::fs::read_dir(&p) {
-                if sub.flatten().any(|e| {
-                    let sp = e.path();
-                    sp.is_file() && media_core::is_video(&sp)
-                }) { return true; }
-            }
-        }
-    }
-    false
-}
