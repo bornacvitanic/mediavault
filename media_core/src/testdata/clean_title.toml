@@ -1,0 +1,86 @@
+# Test cases for clean_title()
+# Each entry: input raw filename/folder → expected cleaned title.
+
+[[cases]]
+input = "Tron.Legacy.2010.2160p.UHD.BluRay.REMUX.DV.P7.HDR.MULTI-BenT"
+expected = "Tron Legacy"
+
+[[cases]]
+input = "[UsaBit.com] - Pirates.of.Silicon.Valley.1999.DVDRip.x264-RQQU"
+expected = "Pirates of Silicon Valley"
+
+[[cases]]
+input = "Dr. Stone [Season 3 + Specials] [BD][1080p][HEVC 10bit x265][Batch]"
+expected = "Dr Stone"
+note = "dots in 'Dr.' become spaces after bracket stripping"
+
+[[cases]]
+input = "Apocalypse Hotel (2025) S01E01 A True Hotel Is Always Storied"
+expected = "Apocalypse Hotel"
+
+[[cases]]
+input = "Frieren\uA789 Beyond Journey\u2019s End [BD][1080p][HEVC 10bit x265][Dual Audio][Tenrai-Sensei]"
+expected = "Frieren: Beyond Journey's End"
+note = "U+A789 modifier letter colon + U+2019 right single quotation"
+
+[[cases]]
+input = "All.The.Bright.Places.2020.720p.NF.WEBRip.800MB.x264-GalaxyRG"
+expected = "All The Bright Places"
+
+[[cases]]
+input = "Amadeus.1984.4K.HDR.2160p BDRemux Ita Eng x265-NAHOM"
+expected = "Amadeus"
+
+[[cases]]
+input = "Delicious In Dungeon S01 1080p BluRay x265"
+expected = "Delicious In Dungeon"
+note = "season token truncation"
+
+[[cases]]
+input = "The_Matrix_1999_BluRay_1080p_x264"
+expected = "The Matrix"
+
+# guessit-derived filenames
+
+[[cases]]
+input = "2012.2009.720p.BluRay.x264.DTS-METiS"
+expected = "2012"
+note = "title IS a year but 2009 follows as release year"
+
+[[cases]]
+input = "The.Shawshank.Redemption.1994.1080p.BluRay.x264"
+expected = "The Shawshank Redemption"
+
+[[cases]]
+input = "Blade.Runner.2049.2017.2160p.UHD.BluRay.x265-TERMiNAL"
+expected = "Blade Runner 2049"
+note = "2049 is part of the title; 2017 is the release year"
+
+[[cases]]
+input = "A.Fistful.of.Dollars.1964.REMASTERED.1080p.BluRay"
+expected = "A Fistful of Dollars"
+
+[[cases]]
+input = "Spirited.Away.2001.Japanese.1080p.BluRay.x264"
+expected = "Spirited Away"
+
+[[cases]]
+input = "The.Godfather.Part.II.1974.1080p.BluRay.x264"
+expected = "The Godfather Part II"
+
+[[cases]]
+input = "12.Angry.Men.1957.1080p.BluRay.x264"
+expected = "12 Angry Men"
+note = "leading number is not a year (too short context)"
+
+[[cases]]
+input = "Interstellar.2014.IMAX.2160p.UHD.BluRay.x265-TERMiNAL"
+expected = "Interstellar"
+
+[[cases]]
+input = "No.Country.for.Old.Men.2007.720p.BluRay"
+expected = "No Country for Old Men"
+
+[[cases]]
+input = "The.Grand.Budapest.Hotel.2014.1080p.BluRay.x264"
+expected = "The Grand Budapest Hotel"

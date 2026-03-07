@@ -1,0 +1,37 @@
+# Test cases for extract_season()
+# season/label are the expected (u32, String) pair. Omit both for None.
+
+[[cases]]
+input = "Show S01"
+season = 1
+label = "S1"
+
+[[cases]]
+input = "Dr. Stone Season 3"
+season = 3
+label = "S3"
+
+[[cases]]
+input = "Dr. Stone [Season 3 + Specials]"
+season = 3
+label = "S3"
+note = "brackets are now stripped so Season is visible"
+
+[[cases]]
+input = "Show.S02.1080p"
+season = 2
+label = "S2"
+
+[[cases]]
+input = "Show S01E04 Title"
+season = 1
+label = "S1"
+
+[[cases]]
+input = "Les Revenants Saison 2"
+season = 2
+label = "S2"
+
+[[cases]]
+input = "Amadeus 1984 4K HDR"
+note = "no season"

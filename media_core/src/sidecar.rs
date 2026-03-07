@@ -3,7 +3,7 @@
 /// itself holds no database.
 ///
 /// File layout per entry:
-/// ```
+/// ```text
 ///   <dir>/
 ///     {video_stem}.watched.toml  ← MovieState  (per video file, not per dir)
 ///     show.bookmarks.toml        ← ShowBookmarks (shows only)

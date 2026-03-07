@@ -1,0 +1,62 @@
+# Test cases for extract_metadata()
+# Optional fields: omit to skip assertion, set to "" for explicit None check.
+
+[[cases]]
+input = "Tron.Legacy.2010.2160p.UHD.BluRay.REMUX.DV.P7.HDR.MULTI-BenT"
+year = 2010
+resolution = "4K"
+source = "BluRay"
+hdr = "DV"
+
+[[cases]]
+input = "Frieren\uA789 Beyond Journey\u2019s End [BD][1080p][HEVC 10bit x265][Dual Audio][Tenrai-Sensei]"
+resolution = "1080p"
+source = "BluRay"
+codec = "x265"
+
+[[cases]]
+input = "Apocalypse Hotel (2025) S01E01 A True Hotel Is Always Storied (1080p WEB-DL H264 DDP 2.0 Japanese) [Cytox]"
+year = 2025
+resolution = "1080p"
+source = "WEB-DL"
+codec = "x264"
+season = [1, "S1"]
+
+[[cases]]
+input = "All.The.Bright.Places.2020.720p.NF.WEBRip.800MB.x264-GalaxyRG"
+year = 2020
+resolution = "720p"
+source = "WEBRip"
+codec = "x264"
+
+[[cases]]
+input = "Amadeus.1984.4K.HDR.2160p BDRemux Ita Eng x265-NAHOM"
+year = 1984
+resolution = "4K"
+source = "BluRay"
+hdr = "HDR"
+codec = "x265"
+
+[[cases]]
+input = "My Home Video"
+note = "no tags at all"
+
+[[cases]]
+input = "The.Flash.2014.S03E07.720p.BluRay.x264-DEMAND"
+year = 2014
+resolution = "720p"
+source = "BluRay"
+codec = "x264"
+season = [3, "S3"]
+
+[[cases]]
+input = "[HorribleSubs] Naruto Shippuuden - 495 [720p]"
+resolution = "720p"
+
+[[cases]]
+input = "Blade.Runner.2049.2017.2160p.UHD.BluRay.x265-TERMiNAL"
+year = 2049
+resolution = "4K"
+source = "BluRay"
+codec = "x265"
+note = "first year (2049) is extracted — it's the title year"

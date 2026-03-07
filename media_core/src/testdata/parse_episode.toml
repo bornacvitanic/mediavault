@@ -1,0 +1,80 @@
+# Test cases for parse_episode()
+
+[[cases]]
+input = "Delicious In Dungeon - S01E01 - Hot PotTart"
+season = 1
+episode = 1
+title = "Hot PotTart"
+
+[[cases]]
+input = "[DiabloTripleA] Dr Stone - S03E01 [D5ACD9A8]"
+season = 3
+episode = 1
+
+[[cases]]
+input = "[DB]Gurren Lagann_-_08_(Dual Audio_10bit_BD1080p_x265)"
+season = 1
+episode = 8
+note = "bare number fallback, season defaults to 1"
+
+[[cases]]
+input = "Apocalypse Hotel (2025) S01E01 A True Hotel Is Always Storied (1080p WEB-DL H264 DDP 2.0 Japanese) [Cytox]"
+season = 1
+episode = 1
+title = "A True Hotel Is Always Storied"
+note = "trailing noise brackets stripped to reveal episode title"
+
+[[cases]]
+input = "Show S02E05 [1080p][x265]"
+season = 2
+episode = 5
+
+[[cases]]
+input = "show.s1e12.title.720p"
+season = 1
+episode = 12
+
+[[cases]]
+input = "Long Running Show - S01E100 - Finale"
+season = 1
+episode = 100
+title = "Finale"
+
+[[cases]]
+input = "random file without episode info"
+season = 0
+episode = 0
+note = "unparseable"
+
+# guessit-derived
+
+[[cases]]
+input = "The.Flash.2014.S03E07.Killer.Frost.720p.BluRay"
+season = 3
+episode = 7
+
+[[cases]]
+input = "[HorribleSubs] Naruto Shippuuden - 495 [720p]"
+season = 1
+episode = 495
+note = "bare number after dash, fansub style"
+
+[[cases]]
+input = "Show - S01E03 - Great Title (1080p WEB-DL)"
+season = 1
+episode = 3
+title = "Great Title"
+
+# H:\Shows derived
+
+[[cases]]
+input = "Delicious In Dungeon - S01E24 - Chanterelle"
+season = 1
+episode = 24
+title = "Chanterelle"
+
+[[cases]]
+input = "Frieren Beyond Journey's End - S01E01 - The Journey's End"
+season = 1
+episode = 1
+title = "The Journey's End"

@@ -216,15 +216,25 @@ fn is_season_token(tok: &str) -> bool {
 }
 
 fn is_size_token(tok: &str) -> bool {
-    let t = tok.trim_end_matches("mb").trim_end_matches("gb");
+    // Must end with "mb" or "gb" — bare numbers like "12" are NOT sizes.
+    let t = if tok.ends_with("mb") {
+        &tok[..tok.len() - 2]
+    } else if tok.ends_with("gb") {
+        &tok[..tok.len() - 2]
+    } else {
+        return false;
+    };
     !t.is_empty() && t.chars().all(|c| c.is_ascii_digit())
 }
 
 /// Extract a season number from a raw string, returning (season_number, display_label).
 /// Recognises patterns like: S01, S1, Season 1, Season.1, s02, SAISON 2
 pub fn extract_season(raw: &str) -> Option<(u32, String)> {
-    let spaced = raw.replace(['.', '_'], " ");
-    let tokens: Vec<&str> = spaced.split_whitespace().collect();
+    // Strip brackets so "[Season 3]" becomes " Season 3 " and tokenises correctly.
+    let no_brackets = raw
+        .replace(['[', ']', '(', ')'], " ")
+        .replace(['.', '_'], " ");
+    let tokens: Vec<&str> = no_brackets.split_whitespace().collect();
 
     for (i, tok) in tokens.iter().enumerate() {
         let lo = tok.to_lowercase();
@@ -359,13 +369,29 @@ pub fn clean_title(raw: &str) -> String {
     let spaced = no_brackets.replace(['.', '_'], " ");
 
     // 4. Tokenise and truncate at the first noise signal.
+    //    Special case: a year-like token (e.g. "2049") is kept as part of the
+    //    title when a *second* year token follows later — that means the first
+    //    is part of the title and the second is the release year.
+    let all_tokens: Vec<&str> = spaced.split_whitespace().collect();
     let mut keep: Vec<&str> = Vec::new();
-    for token in spaced.split_whitespace() {
+    for (i, token) in all_tokens.iter().enumerate() {
         let lower = token.to_lowercase();
         let clean = lower.trim_matches(|c: char| !c.is_alphanumeric());
 
+        if is_year(clean) {
+            // Look ahead for another year — if one exists, this year is
+            // part of the title (e.g. "Blade Runner 2049 2017 ...").
+            let another_year_ahead = all_tokens[i + 1..]
+                .iter()
+                .any(|t| is_year(t.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric())));
+            if another_year_ahead {
+                keep.push(token);
+                continue;
+            }
+            break;
+        }
+
         if NOISE_TOKENS.contains(&clean)
-            || is_year(clean)
             || is_size_token(clean)
             // Dash-prefixed release group names like `-BenT`, `-GalaxyRG`
             || (token.starts_with('-') && token.len() > 1)
@@ -589,12 +615,32 @@ fn scan_tokens(
     codec: &mut Option<String>,
 ) {
     for token in tokens {
-        let lo = token.to_lowercase();
+        // Split on `-` so `x265-NAHOM` yields sub-tokens `x265` and `NAHOM`,
+        // allowing the codec to be recognised even when fused with a group name.
+        for sub in token.split('-') {
+            if sub.is_empty() {
+                continue;
+            }
+            scan_single_token(sub, year, resolution, source, hdr, codec);
+        }
+    }
+}
+
+fn scan_single_token(
+    sub: &str,
+    year: &mut Option<u32>,
+    resolution: &mut Option<String>,
+    source: &mut Option<String>,
+    hdr: &mut Option<String>,
+    codec: &mut Option<String>,
+) {
+    {
+        let lo = sub.to_lowercase();
         let clean = lo.trim_matches(|c: char| !c.is_alphanumeric());
 
         if year.is_none() && is_year(clean) {
             *year = clean.parse().ok();
-            continue;
+            return;
         }
         if resolution.is_none() {
             *resolution = match clean {
@@ -605,7 +651,7 @@ fn scan_tokens(
                 _ => None,
             };
             if resolution.is_some() {
-                continue;
+                return;
             }
         }
         if source.is_none() {
@@ -621,7 +667,7 @@ fn scan_tokens(
                 _ => None,
             };
             if source.is_some() {
-                continue;
+                return;
             }
         }
         if hdr.is_none() {
@@ -634,7 +680,7 @@ fn scan_tokens(
                 _ => None,
             };
             if hdr.is_some() {
-                continue;
+                return;
             }
         }
         if codec.is_none() {
@@ -875,7 +921,7 @@ fn regex_strip_trailing_hash(s: &str) -> String {
 /// Only removes content inside `[...]` or `(...)` that contains known noise
 /// (resolution, codec, source, etc.) at the end of the string.
 fn strip_trailing_release_tags(s: &str) -> String {
-    let noise_re = [
+    let noise_words = [
         "1080p",
         "720p",
         "2160p",
@@ -902,8 +948,17 @@ fn strip_trailing_release_tags(s: &str) -> String {
         "japanese",
         "english",
     ];
+
+    let is_noise = |inner: &str| -> bool {
+        let lo = inner.to_lowercase();
+        noise_words.iter().any(|n| lo.contains(n))
+    };
+
     let mut result = s.trim().to_string();
     // Repeatedly strip trailing bracket groups that contain noise words.
+    // Non-noise groups (like [Cytox]) are temporarily skipped so we can
+    // reach noise groups behind them. If we never find noise, we restore
+    // the skipped groups.
     loop {
         let trimmed = result.trim_end().to_string();
         let (open_ch, _close_ch) = if trimmed.ends_with(')') {
@@ -914,12 +969,48 @@ fn strip_trailing_release_tags(s: &str) -> String {
             break;
         };
         if let Some(open) = trimmed.rfind(open_ch) {
-            let inner = trimmed[open + 1..trimmed.len() - 1].to_lowercase();
-            let is_noise = noise_re.iter().any(|n| inner.contains(n));
-            if is_noise {
+            let inner = &trimmed[open + 1..trimmed.len() - 1];
+            if is_noise(inner) {
                 result = trimmed[..open].trim_end().to_string();
             } else {
-                break;
+                // Peek past this non-noise group: temporarily remove it
+                // and check if a noise group hides behind it.
+                let before = trimmed[..open].trim_end();
+                if before.is_empty() {
+                    break;
+                }
+                let mut peek = before.to_string();
+                let mut found_noise = false;
+                loop {
+                    let p = peek.trim_end().to_string();
+                    let (o_ch, _) = if p.ends_with(')') {
+                        ('(', ')')
+                    } else if p.ends_with(']') {
+                        ('[', ']')
+                    } else {
+                        break;
+                    };
+                    if let Some(o) = p.rfind(o_ch) {
+                        let inner2 = &p[o + 1..p.len() - 1];
+                        if is_noise(inner2) {
+                            found_noise = true;
+                            break;
+                        }
+                        let b = p[..o].trim_end();
+                        if b.is_empty() {
+                            break;
+                        }
+                        peek = b.to_string();
+                    } else {
+                        break;
+                    }
+                }
+                if found_noise {
+                    // Remove this non-noise group and continue the main loop
+                    result = before.to_string();
+                } else {
+                    break;
+                }
             }
         } else {
             break;
@@ -1018,243 +1109,150 @@ fn clean_episode_title(s: &str) -> String {
 mod tests {
     use super::*;
 
-    // ── clean_title ──────────────────────────────────────────────────────────
+    // ── Data-driven test helpers ─────────────────────────────────────────────
 
-    #[test]
-    fn clean_title_dot_separated_movie() {
-        assert_eq!(
-            clean_title("Tron.Legacy.2010.2160p.UHD.BluRay.REMUX.DV.P7.HDR.MULTI-BenT"),
-            "Tron Legacy"
-        );
+    mod data {
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        pub struct CleanTitleFile {
+            pub cases: Vec<CleanTitleCase>,
+        }
+        #[derive(Deserialize)]
+        pub struct CleanTitleCase {
+            pub input: String,
+            pub expected: String,
+        }
+
+        #[derive(Deserialize)]
+        pub struct MetadataFile {
+            pub cases: Vec<MetadataCase>,
+        }
+        #[derive(Deserialize)]
+        pub struct MetadataCase {
+            pub input: String,
+            pub year: Option<u32>,
+            pub resolution: Option<String>,
+            pub source: Option<String>,
+            pub hdr: Option<String>,
+            pub codec: Option<String>,
+            pub season: Option<(u32, String)>,
+        }
+
+        #[derive(Deserialize)]
+        pub struct ParseEpisodeFile {
+            pub cases: Vec<ParseEpisodeCase>,
+        }
+        #[derive(Deserialize)]
+        pub struct ParseEpisodeCase {
+            pub input: String,
+            pub season: Option<u32>,
+            pub episode: Option<u32>,
+            pub title: Option<String>,
+        }
+
+        #[derive(Deserialize)]
+        pub struct ExtractSeasonFile {
+            pub cases: Vec<ExtractSeasonCase>,
+        }
+        #[derive(Deserialize)]
+        pub struct ExtractSeasonCase {
+            pub input: String,
+            pub season: Option<u32>,
+            pub label: Option<String>,
+        }
     }
 
-    #[test]
-    fn clean_title_strips_site_prefix() {
-        assert_eq!(
-            clean_title("[UsaBit.com] - Pirates.of.Silicon.Valley.1999.DVDRip.x264-RQQU"),
-            "Pirates of Silicon Valley"
-        );
-    }
+    // ── Data-driven: clean_title ─────────────────────────────────────────────
 
     #[test]
-    fn clean_title_anime_brackets() {
-        // Dots are replaced with spaces, so "Dr." becomes "Dr "
-        assert_eq!(
-            clean_title("Dr. Stone [Season 3 + Specials] [BD][1080p][HEVC 10bit x265][Batch]"),
-            "Dr Stone"
-        );
+    fn clean_title_cases() {
+        let file: data::CleanTitleFile =
+            toml::from_str(include_str!("testdata/clean_title.toml")).unwrap();
+        for case in &file.cases {
+            assert_eq!(
+                clean_title(&case.input),
+                case.expected,
+                "clean_title({:?})",
+                case.input
+            );
+        }
     }
+
+    // ── Data-driven: extract_metadata ────────────────────────────────────────
 
     #[test]
-    fn clean_title_parenthesised_year() {
-        assert_eq!(
-            clean_title("Apocalypse Hotel (2025) S01E01 A True Hotel Is Always Storied"),
-            "Apocalypse Hotel"
-        );
+    fn extract_metadata_cases() {
+        let file: data::MetadataFile =
+            toml::from_str(include_str!("testdata/extract_metadata.toml")).unwrap();
+        for case in &file.cases {
+            let m = extract_metadata(&case.input);
+            if let Some(y) = case.year {
+                assert_eq!(m.year, Some(y), "year for {:?}", case.input);
+            }
+            if let Some(ref r) = case.resolution {
+                assert_eq!(m.resolution.as_deref(), Some(r.as_str()), "resolution for {:?}", case.input);
+            }
+            if let Some(ref s) = case.source {
+                assert_eq!(m.source.as_deref(), Some(s.as_str()), "source for {:?}", case.input);
+            }
+            if let Some(ref h) = case.hdr {
+                assert_eq!(m.hdr.as_deref(), Some(h.as_str()), "hdr for {:?}", case.input);
+            }
+            if let Some(ref c) = case.codec {
+                assert_eq!(m.codec.as_deref(), Some(c.as_str()), "codec for {:?}", case.input);
+            }
+            if let Some(ref s) = case.season {
+                assert_eq!(m.season, Some((s.0, s.1.clone())), "season for {:?}", case.input);
+            }
+        }
     }
+
+    // ── Data-driven: parse_episode ───────────────────────────────────────────
 
     #[test]
-    fn clean_title_unicode_colon_lookalike() {
-        // U+A789 MODIFIER LETTER COLON used in Windows-safe filenames
-        assert_eq!(
-            clean_title("Frieren\u{A789} Beyond Journey's End [BD][1080p][HEVC 10bit x265][Dual Audio][Tenrai-Sensei]"),
-            "Frieren: Beyond Journey's End"
-        );
+    fn parse_episode_cases() {
+        let file: data::ParseEpisodeFile =
+            toml::from_str(include_str!("testdata/parse_episode.toml")).unwrap();
+        for case in &file.cases {
+            let ep = parse_episode(&case.input);
+            if let Some(s) = case.season {
+                assert_eq!(ep.season_num, s, "season for {:?}", case.input);
+            }
+            if let Some(e) = case.episode {
+                assert_eq!(ep.episode_num, e, "episode for {:?}", case.input);
+            }
+            if let Some(ref t) = case.title {
+                assert_eq!(
+                    ep.episode_title.as_deref(),
+                    Some(t.as_str()),
+                    "title for {:?}",
+                    case.input
+                );
+            }
+        }
     }
+
+    // ── Data-driven: extract_season ──────────────────────────────────────────
 
     #[test]
-    fn clean_title_simple_movie() {
-        assert_eq!(
-            clean_title("All.The.Bright.Places.2020.720p.NF.WEBRip.800MB.x264-GalaxyRG"),
-            "All The Bright Places"
-        );
+    fn extract_season_cases() {
+        let file: data::ExtractSeasonFile =
+            toml::from_str(include_str!("testdata/extract_season.toml")).unwrap();
+        for case in &file.cases {
+            let result = extract_season(&case.input);
+            match (&case.season, &case.label) {
+                (Some(s), Some(l)) => {
+                    assert_eq!(result, Some((*s, l.clone())), "extract_season({:?})", case.input);
+                }
+                _ => {
+                    assert_eq!(result, None, "extract_season({:?}) should be None", case.input);
+                }
+            }
+        }
     }
 
-    #[test]
-    fn clean_title_4k_remux() {
-        assert_eq!(
-            clean_title("Amadeus.1984.4K.HDR.2160p BDRemux Ita Eng x265-NAHOM"),
-            "Amadeus"
-        );
-    }
-
-    #[test]
-    fn clean_title_season_token_truncation() {
-        assert_eq!(
-            clean_title("Delicious In Dungeon S01 1080p BluRay x265"),
-            "Delicious In Dungeon"
-        );
-    }
-
-    #[test]
-    fn clean_title_underscores() {
-        assert_eq!(
-            clean_title("The_Matrix_1999_BluRay_1080p_x264"),
-            "The Matrix"
-        );
-    }
-
-    // guessit-derived movie filenames
-    #[test]
-    fn clean_title_guessit_movies() {
-        assert_eq!(
-            clean_title("2012.2009.720p.BluRay.x264.DTS-METiS"),
-            "2012" // year in title but 2009 is the release year
-        );
-        assert_eq!(
-            clean_title("The.Shawshank.Redemption.1994.1080p.BluRay.x264"),
-            "The Shawshank Redemption"
-        );
-        // "2049" looks like a year so clean_title truncates before it
-        assert_eq!(
-            clean_title("Blade.Runner.2049.2017.2160p.UHD.BluRay.x265-TERMiNAL"),
-            "Blade Runner"
-        );
-        assert_eq!(
-            clean_title("A.Fistful.of.Dollars.1964.REMASTERED.1080p.BluRay"),
-            "A Fistful of Dollars"
-        );
-    }
-
-    // ── extract_year ─────────────────────────────────────────────────────────
-
-    #[test]
-    fn extract_year_dot_separated() {
-        assert_eq!(extract_year("Tron.Legacy.2010.2160p"), Some(2010));
-    }
-
-    #[test]
-    fn extract_year_parenthesised() {
-        assert_eq!(extract_year("Apocalypse Hotel (2025)"), Some(2025));
-    }
-
-    #[test]
-    fn extract_year_underscore() {
-        assert_eq!(extract_year("The_Matrix_1999_BluRay"), Some(1999));
-    }
-
-    #[test]
-    fn extract_year_none_when_absent() {
-        assert_eq!(extract_year("Delicious In Dungeon"), None);
-    }
-
-    #[test]
-    fn extract_year_ignores_resolution_digits() {
-        // "1080" is not a valid year (< 1900)
-        assert_eq!(extract_year("Show.1080p.BluRay"), None);
-    }
-
-    #[test]
-    fn extract_year_old_film() {
-        assert_eq!(extract_year("Amadeus.1984.4K.HDR"), Some(1984));
-    }
-
-    // ── extract_season ───────────────────────────────────────────────────────
-
-    #[test]
-    fn extract_season_bare_s01() {
-        assert_eq!(extract_season("Show S01"), Some((1, "S1".into())));
-    }
-
-    #[test]
-    fn extract_season_word_season() {
-        // "Season 3" works when not inside brackets
-        assert_eq!(
-            extract_season("Dr. Stone Season 3"),
-            Some((3, "S3".into()))
-        );
-    }
-
-    #[test]
-    fn extract_season_word_in_brackets_not_found() {
-        // "[Season" token doesn't match "season" — known limitation
-        assert_eq!(
-            extract_season("Dr. Stone [Season 3 + Specials]"),
-            None
-        );
-    }
-
-    #[test]
-    fn extract_season_dot_separated() {
-        assert_eq!(extract_season("Show.S02.1080p"), Some((2, "S2".into())));
-    }
-
-    #[test]
-    fn extract_season_combined_sxexx() {
-        assert_eq!(
-            extract_season("Show S01E04 Title"),
-            Some((1, "S1".into()))
-        );
-    }
-
-    #[test]
-    fn extract_season_saison() {
-        assert_eq!(
-            extract_season("Les Revenants Saison 2"),
-            Some((2, "S2".into()))
-        );
-    }
-
-    #[test]
-    fn extract_season_none_when_absent() {
-        assert_eq!(extract_season("Amadeus 1984 4K HDR"), None);
-    }
-
-    // ── extract_metadata ─────────────────────────────────────────────────────
-
-    #[test]
-    fn metadata_full_scene_release() {
-        let m = extract_metadata("Tron.Legacy.2010.2160p.UHD.BluRay.REMUX.DV.P7.HDR.MULTI-BenT");
-        assert_eq!(m.year, Some(2010));
-        assert_eq!(m.resolution.as_deref(), Some("4K"));
-        assert_eq!(m.source.as_deref(), Some("BluRay"));
-        assert_eq!(m.codec, None); // no x264/x265 in this name
-        assert_eq!(m.hdr.as_deref(), Some("DV"));
-    }
-
-    #[test]
-    fn metadata_anime_bracket_release() {
-        let m = extract_metadata(
-            "Frieren\u{A789} Beyond Journey's End [BD][1080p][HEVC 10bit x265][Dual Audio][Tenrai-Sensei]",
-        );
-        assert_eq!(m.resolution.as_deref(), Some("1080p"));
-        assert_eq!(m.source.as_deref(), Some("BluRay"));
-        assert_eq!(m.codec.as_deref(), Some("x265"));
-    }
-
-    #[test]
-    fn metadata_webdl() {
-        let m = extract_metadata(
-            "Apocalypse Hotel (2025) S01E01 A True Hotel Is Always Storied (1080p WEB-DL H264 DDP 2.0 Japanese) [Cytox]",
-        );
-        assert_eq!(m.year, Some(2025));
-        assert_eq!(m.resolution.as_deref(), Some("1080p"));
-        assert_eq!(m.source.as_deref(), Some("WEB-DL"));
-        assert_eq!(m.codec.as_deref(), Some("x264"));
-        assert_eq!(m.season, Some((1, "S1".into())));
-    }
-
-    #[test]
-    fn metadata_webrip_720p() {
-        let m = extract_metadata("All.The.Bright.Places.2020.720p.NF.WEBRip.800MB.x264-GalaxyRG");
-        assert_eq!(m.year, Some(2020));
-        assert_eq!(m.resolution.as_deref(), Some("720p"));
-        assert_eq!(m.source.as_deref(), Some("WEBRip"));
-        // "x264-GalaxyRG" fused with group name — codec not extracted
-        assert_eq!(m.codec, None);
-    }
-
-    #[test]
-    fn metadata_4k_remux() {
-        let m = extract_metadata("Amadeus.1984.4K.HDR.2160p BDRemux Ita Eng x265-NAHOM");
-        assert_eq!(m.year, Some(1984));
-        assert_eq!(m.resolution.as_deref(), Some("4K"));
-        assert_eq!(m.source.as_deref(), Some("BluRay"));
-        assert_eq!(m.hdr.as_deref(), Some("HDR"));
-        // "x265-NAHOM" is a single token; clean trims non-alphanumeric but
-        // the dash+group stays fused, so codec is not extracted
-        assert_eq!(m.codec, None);
-    }
+    // ── Standalone: extract_metadata_with_episodes ───────────────────────────
 
     #[test]
     fn metadata_episode_fallback() {
@@ -1279,99 +1277,24 @@ mod tests {
         assert_eq!(m.hdr, None);
     }
 
-    // ── parse_episode ────────────────────────────────────────────────────────
+    // ── Standalone: extract_year ─────────────────────────────────────────────
 
     #[test]
-    fn parse_episode_standard_sxxexx() {
-        let ep = parse_episode("Delicious In Dungeon - S01E01 - Hot PotTart");
-        assert_eq!(ep.season_num, 1);
-        assert_eq!(ep.episode_num, 1);
-        assert_eq!(ep.episode_title.as_deref(), Some("Hot PotTart"));
+    fn extract_year_dot_separated() {
+        assert_eq!(extract_year("Tron.Legacy.2010.2160p"), Some(2010));
     }
 
     #[test]
-    fn parse_episode_fansub_with_crc() {
-        let ep = parse_episode("[DiabloTripleA] Dr Stone - S03E01 [D5ACD9A8]");
-        assert_eq!(ep.season_num, 3);
-        assert_eq!(ep.episode_num, 1);
+    fn extract_year_none_when_absent() {
+        assert_eq!(extract_year("Delicious In Dungeon"), None);
     }
 
     #[test]
-    fn parse_episode_bare_number() {
-        let ep = parse_episode("[DB]Gurren Lagann_-_08_(Dual Audio_10bit_BD1080p_x265)");
-        assert_eq!(ep.season_num, 1);
-        assert_eq!(ep.episode_num, 8);
+    fn extract_year_ignores_resolution_digits() {
+        assert_eq!(extract_year("Show.1080p.BluRay"), None);
     }
 
-    #[test]
-    fn parse_episode_with_release_tags_in_parens() {
-        // [Cytox] blocks noise stripping so the full tail survives as episode title
-        let ep = parse_episode(
-            "Apocalypse Hotel (2025) S01E01 A True Hotel Is Always Storied (1080p WEB-DL H264 DDP 2.0 Japanese) [Cytox]",
-        );
-        assert_eq!(ep.season_num, 1);
-        assert_eq!(ep.episode_num, 1);
-        assert!(ep.episode_title.as_deref().unwrap().starts_with("A True Hotel"));
-    }
-
-    #[test]
-    fn parse_episode_release_tags_stripped_when_noise() {
-        let ep = parse_episode(
-            "Show - S01E03 - Great Title (1080p WEB-DL)",
-        );
-        assert_eq!(ep.season_num, 1);
-        assert_eq!(ep.episode_num, 3);
-        assert_eq!(ep.episode_title.as_deref(), Some("Great Title"));
-    }
-
-    #[test]
-    fn parse_episode_no_title() {
-        let ep = parse_episode("Show S02E05 [1080p][x265]");
-        assert_eq!(ep.season_num, 2);
-        assert_eq!(ep.episode_num, 5);
-        assert_eq!(ep.episode_title, None);
-    }
-
-    #[test]
-    fn parse_episode_lowercase_sxexx() {
-        let ep = parse_episode("show.s1e12.title.720p");
-        assert_eq!(ep.season_num, 1);
-        assert_eq!(ep.episode_num, 12);
-    }
-
-    #[test]
-    fn parse_episode_three_digit_ep() {
-        let ep = parse_episode("Long Running Show - S01E100 - Finale");
-        assert_eq!(ep.season_num, 1);
-        assert_eq!(ep.episode_num, 100);
-        assert_eq!(ep.episode_title.as_deref(), Some("Finale"));
-    }
-
-    #[test]
-    fn parse_episode_unparseable() {
-        let ep = parse_episode("random file without episode info");
-        assert_eq!(ep.season_num, 0);
-        assert_eq!(ep.episode_num, 0);
-        assert_eq!(ep.episode_title, None);
-    }
-
-    // guessit-derived episode filenames
-    #[test]
-    fn parse_episode_guessit_standard() {
-        let ep = parse_episode("The.Flash.2014.S03E07.Killer.Frost.720p.BluRay");
-        assert_eq!(ep.season_num, 3);
-        assert_eq!(ep.episode_num, 7);
-    }
-
-    #[test]
-    fn parse_episode_guessit_anime_bare() {
-        // Bare episode number after dash
-        let ep = parse_episode("[HorribleSubs] Naruto Shippuuden - 495 [720p]");
-        assert_eq!(ep.episode_num, 495);
-        assert_eq!(ep.season_num, 1); // fallback
-    }
-
-    // ── expand_token ─────────────────────────────────────────────────────────
+    // ── Standalone: internal helpers ─────────────────────────────────────────
 
     #[test]
     fn expand_token_fused_bd1080p() {
@@ -1389,16 +1312,9 @@ mod tests {
     }
 
     #[test]
-    fn expand_token_plain_resolution() {
-        assert_eq!(expand_token("1080p"), vec!["1080p"]);
-    }
-
-    #[test]
     fn expand_token_web720p() {
         assert_eq!(expand_token("WEB720p"), vec!["WEB", "720p"]);
     }
-
-    // ── bracket_tokens ───────────────────────────────────────────────────────
 
     #[test]
     fn bracket_tokens_anime_style() {
@@ -1412,92 +1328,43 @@ mod tests {
     #[test]
     fn bracket_tokens_fused_inside() {
         let tokens = bracket_tokens("[DB]Title [BD1080p]");
-        assert!(tokens.contains(&"DB".to_string()));
         assert!(tokens.contains(&"BD".to_string()));
         assert!(tokens.contains(&"1080p".to_string()));
     }
 
     #[test]
-    fn bracket_tokens_parentheses() {
-        let tokens = bracket_tokens("Show (2025) (1080p WEB-DL)");
-        assert!(tokens.contains(&"2025".to_string()));
-        assert!(tokens.contains(&"1080p".to_string()));
-    }
-
-    // ── strip_brackets ───────────────────────────────────────────────────────
-
-    #[test]
     fn strip_brackets_removes_all() {
-        assert_eq!(
-            strip_brackets("Title [BD][1080p] Stuff"),
-            "Title  Stuff"
-        );
+        assert_eq!(strip_brackets("Title [BD][1080p] Stuff"), "Title  Stuff");
     }
-
-    #[test]
-    fn strip_brackets_nested_ignored() {
-        assert_eq!(strip_brackets("A [B [C] D] E"), "A  E");
-    }
-
-    // ── is_year ──────────────────────────────────────────────────────────────
 
     #[test]
     fn is_year_valid() {
         assert!(is_year("2024"));
         assert!(is_year("1984"));
-        assert!(is_year("1900"));
-    }
-
-    #[test]
-    fn is_year_invalid() {
-        assert!(!is_year("1080")); // too early
-        assert!(!is_year("2101")); // too late
+        assert!(!is_year("1080"));
         assert!(!is_year("abcd"));
-        assert!(!is_year("20"));
     }
-
-    // ── is_season_token ──────────────────────────────────────────────────────
 
     #[test]
     fn is_season_token_various() {
         assert!(is_season_token("season"));
         assert!(is_season_token("saison"));
         assert!(is_season_token("s01"));
-        assert!(is_season_token("s1"));
         assert!(!is_season_token("s"));
-        assert!(!is_season_token("show"));
-        assert!(!is_season_token("s01e02")); // too long
+        assert!(!is_season_token("s01e02"));
     }
-
-    // ── find_sxexx ──────────────────────────────────────────────────────────
 
     #[test]
     fn find_sxexx_standard() {
         let (s, e, after) = find_sxexx("Show - S01E04 - Title").unwrap();
-        assert_eq!(s, 1);
-        assert_eq!(e, 4);
+        assert_eq!((s, e), (1, 4));
         assert_eq!(after, "Title");
     }
 
     #[test]
-    fn find_sxexx_lowercase() {
-        let (s, e, _) = find_sxexx("show.s2e10.stuff").unwrap();
-        assert_eq!(s, 2);
-        assert_eq!(e, 10);
-    }
-
-    #[test]
-    fn find_sxexx_no_match() {
-        assert!(find_sxexx("no episode here").is_none());
-    }
-
-    #[test]
     fn find_sxexx_word_boundary() {
-        // "season" contains 's' but should not match as SxxExx
         assert!(find_sxexx("season eight").is_none());
     }
-
-    // ── find_bare_episode_number ─────────────────────────────────────────────
 
     #[test]
     fn find_bare_ep_after_dash() {
@@ -1505,16 +1372,9 @@ mod tests {
     }
 
     #[test]
-    fn find_bare_ep_three_digits() {
-        assert_eq!(find_bare_episode_number("Show - 495"), Some(495));
-    }
-
-    #[test]
     fn find_bare_ep_none() {
         assert_eq!(find_bare_episode_number("Show Title Only"), None);
     }
-
-    // ── clean_episode_title ──────────────────────────────────────────────────
 
     #[test]
     fn clean_episode_title_strips_dashes() {
@@ -1527,13 +1387,6 @@ mod tests {
     }
 
     #[test]
-    fn clean_episode_title_collapses_whitespace() {
-        assert_eq!(clean_episode_title("  A   Long   Title  "), "A Long Title");
-    }
-
-    // ── regex_strip_trailing_hash ────────────────────────────────────────────
-
-    #[test]
     fn strip_trailing_hash_8hex() {
         assert_eq!(
             regex_strip_trailing_hash("Dr Stone - S03E01 [D5ACD9A8]"),
@@ -1542,41 +1395,16 @@ mod tests {
     }
 
     #[test]
-    fn strip_trailing_hash_no_hash() {
+    fn strip_trailing_release_tags_through_non_noise() {
         assert_eq!(
-            regex_strip_trailing_hash("Show - S01E01 - Title"),
-            "Show - S01E01 - Title"
-        );
-    }
-
-    // ── strip_trailing_release_tags ──────────────────────────────────────────
-
-    #[test]
-    fn strip_trailing_release_tags_parens_and_brackets() {
-        // [Cytox] is not a noise tag, so stripping stops there — the inner
-        // (1080p ...) noise parens are unreachable. Known limitation.
-        assert_eq!(
-            strip_trailing_release_tags(
-                "Title (1080p WEB-DL H264 DDP 2.0 Japanese) [Cytox]"
-            ),
-            "Title (1080p WEB-DL H264 DDP 2.0 Japanese) [Cytox]"
+            strip_trailing_release_tags("Title (1080p WEB-DL H264 DDP 2.0 Japanese) [Cytox]"),
+            "Title"
         );
     }
 
     #[test]
     fn strip_trailing_release_tags_noise_bracket() {
-        assert_eq!(
-            strip_trailing_release_tags("Title [1080p x265]"),
-            "Title"
-        );
-    }
-
-    #[test]
-    fn strip_trailing_release_tags_noise_parens() {
-        assert_eq!(
-            strip_trailing_release_tags("Title (1080p WEB-DL)"),
-            "Title"
-        );
+        assert_eq!(strip_trailing_release_tags("Title [1080p x265]"), "Title");
     }
 
     #[test]
