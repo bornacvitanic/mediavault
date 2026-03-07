@@ -11,7 +11,7 @@ use chrono::Utc;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
 use media_core::{
-    models::{Comments, MediaEntry, Movie, Show, WatchEvent},
+    models::{Comments, MediaEntry, WatchEvent},
     scan_library,
     sidecar::{
         load_comments_from_path, save_comments_to_path, save_movie_state, save_show_bookmarks,
@@ -52,8 +52,6 @@ struct PosterLoaded {
     // Keyed on poster_path (not base_dir) so root-level movies sharing a
     // base_dir each get their own texture slot.
     poster_path: PathBuf,
-    #[allow(dead_code)]
-    base_dir: PathBuf,
     image: ColorImage,
 }
 
@@ -217,55 +215,6 @@ impl App {
         }
     }
 
-    /// Kick off a background thread to fetch (or load from cache) a poster for
-    /// the given entry. Does nothing if a fetch was already attempted.
-    #[allow(dead_code)]
-    fn ensure_poster(&mut self, entry: &MediaEntry) {
-        let base_dir = entry.base_dir().clone();
-        let poster_path = entry.poster_cache_path().clone();
-        if self.poster_attempted.contains(&poster_path) {
-            return;
-        }
-        self.poster_attempted.insert(poster_path.clone());
-
-        // If the poster is already cached on disk, just load it.
-        if poster_path.exists() {
-            let tx = self.poster_tx.clone();
-            thread::spawn(move || {
-                if let Ok(img) = load_image_from_disk(&poster_path) {
-                    let _ = tx.send(PosterLoaded {
-                        poster_path,
-                        base_dir,
-                        image: img,
-                    });
-                }
-            });
-            return;
-        }
-
-        // Otherwise fetch from TMDB if we have an API key.
-        if self.config.tmdb_api_key.is_empty() {
-            return;
-        }
-        let api_key = self.config.tmdb_api_key.clone();
-        let title = entry.title().to_string();
-        let is_movie = matches!(entry, MediaEntry::Movie(_));
-        let tx = self.poster_tx.clone();
-
-        thread::spawn(move || {
-            let ok = fetch_poster(&title, is_movie, &api_key, &poster_path).unwrap_or(false);
-            if ok {
-                if let Ok(img) = load_image_from_disk(&poster_path) {
-                    let _ = tx.send(PosterLoaded {
-                        poster_path: poster_path.clone(),
-                        base_dir,
-                        image: img,
-                    });
-                }
-            }
-        });
-    }
-
     /// Drain the poster channel and upload any newly-arrived images as egui
     /// textures. Must be called each frame.
     fn poll_posters(&mut self, ctx: &egui::Context) {
@@ -327,21 +276,6 @@ impl App {
         indices
     }
 
-    // ── Detail panel helpers ───────────────────────────────────────────────────
-
-    #[allow(dead_code)]
-    fn open_detail(&mut self, entry: &MediaEntry) {
-        self.flush_comments();
-        let cp = entry.comments_path();
-        let comments = load_comments_from_path(&cp);
-        self.comment_buf = comments.markdown.clone();
-        self.comment_dirty = false;
-        self.detail = match entry {
-            MediaEntry::Movie(m) => DetailPanel::Movie(m.poster_path.clone()),
-            MediaEntry::Show(s) => DetailPanel::Show(s.poster_path.clone()),
-        };
-    }
-
     fn flush_comments(&mut self) {
         if !self.comment_dirty {
             return;
@@ -363,36 +297,6 @@ impl App {
             }
         }
         self.comment_dirty = false;
-    }
-
-    #[allow(dead_code)]
-    fn find_movie_mut(&mut self, base_dir: &Path) -> Option<&mut Movie> {
-        self.entries.iter_mut().find_map(|e| {
-            if let MediaEntry::Movie(m) = e {
-                if m.base_dir == base_dir {
-                    Some(m)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
-    }
-
-    #[allow(dead_code)]
-    fn find_show_mut(&mut self, base_dir: &Path) -> Option<&mut Show> {
-        self.entries.iter_mut().find_map(|e| {
-            if let MediaEntry::Show(s) = e {
-                if s.base_dir == base_dir {
-                    Some(s)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
     }
 }
 
@@ -598,10 +502,6 @@ impl eframe::App for App {
 
             // Kick off poster fetches for all visible entries before drawing.
             // We need to clone keys to avoid borrowing issues.
-            let base_dirs: Vec<PathBuf> = indices
-                .iter()
-                .map(|&i| self.entries[i].base_dir().clone())
-                .collect();
             let is_movies: Vec<bool> = indices
                 .iter()
                 .map(|&i| matches!(self.entries[i], MediaEntry::Movie(_)))
@@ -615,7 +515,7 @@ impl eframe::App for App {
                 .map(|&i| self.entries[i].poster_cache_path().clone())
                 .collect();
 
-            for (idx, bd) in base_dirs.iter().enumerate() {
+            for idx in 0..poster_paths.len() {
                 let is_movie = is_movies[idx];
                 let title = &titles[idx];
                 let poster_path = poster_paths[idx].clone();
@@ -623,7 +523,6 @@ impl eframe::App for App {
                     self.poster_attempted.insert(poster_path.clone());
                     let api_key = self.config.tmdb_api_key.clone();
                     let tx = self.poster_tx.clone();
-                    let bd2 = bd.clone();
                     let title2 = title.clone();
                     let is_movie2 = is_movie;
                     thread::spawn(move || {
@@ -631,7 +530,6 @@ impl eframe::App for App {
                             if let Ok(img) = load_image_from_disk(&poster_path) {
                                 let _ = tx.send(PosterLoaded {
                                     poster_path: poster_path.clone(),
-                                    base_dir: bd2,
                                     image: img,
                                 });
                             }
@@ -646,7 +544,6 @@ impl eframe::App for App {
                             if let Ok(img) = load_image_from_disk(&poster_path) {
                                 let _ = tx.send(PosterLoaded {
                                     poster_path: poster_path.clone(),
-                                    base_dir: bd2,
                                     image: img,
                                 });
                             }
