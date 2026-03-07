@@ -115,7 +115,7 @@ fn draw_list(f: &mut Frame, app: &App, vis: &[usize], area: Rect) {
 }
 
 fn items_slice<'a>(
-    vis: &[usize],
+    vis: &'_ [usize],
     entries: &'a [MediaEntry],
     start: usize,
     end: usize,
@@ -128,7 +128,7 @@ fn items_slice<'a>(
     }).collect()
 }
 
-fn make_list_item(entry: &MediaEntry, _selected: bool, width: u16) -> ListItem {
+fn make_list_item(entry: &MediaEntry, _selected: bool, width: u16) -> ListItem<'_> {
     let title = display_title(entry);
     let max_title = (width as usize).saturating_sub(32).min(40).max(16);
     let truncated = truncate(title, max_title);

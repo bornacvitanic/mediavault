@@ -432,8 +432,6 @@ impl App {
                         .map(|ep| ep.display_label())
                         .unwrap_or_default();
 
-                    drop(s2); // release borrow
-
                     if let MediaEntry::Show(s3) = &mut self.entries[idx] {
                         s3.bookmarks.mark_watched(&ep_rel, following.as_deref());
                         if let Err(e) = save_show_bookmarks(&base, &s3.bookmarks) {

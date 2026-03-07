@@ -52,6 +52,7 @@ struct PosterLoaded {
     // Keyed on poster_path (not base_dir) so root-level movies sharing a
     // base_dir each get their own texture slot.
     poster_path: PathBuf,
+    #[allow(dead_code)]
     base_dir: PathBuf,
     image: ColorImage,
 }
@@ -214,6 +215,7 @@ impl App {
 
     /// Kick off a background thread to fetch (or load from cache) a poster for
     /// the given entry. Does nothing if a fetch was already attempted.
+    #[allow(dead_code)]
     fn ensure_poster(&mut self, entry: &MediaEntry) {
         let base_dir = entry.base_dir().clone();
         let poster_path = entry.poster_cache_path().clone();
@@ -323,6 +325,7 @@ impl App {
 
     // ── Detail panel helpers ───────────────────────────────────────────────────
 
+    #[allow(dead_code)]
     fn open_detail(&mut self, entry: &MediaEntry) {
         self.flush_comments();
         let cp = entry.comments_path();
@@ -356,6 +359,7 @@ impl App {
         self.comment_dirty = false;
     }
 
+    #[allow(dead_code)]
     fn find_movie_mut(&mut self, base_dir: &Path) -> Option<&mut Movie> {
         self.entries.iter_mut().find_map(|e| {
             if let MediaEntry::Movie(m) = e {
@@ -366,6 +370,7 @@ impl App {
         })
     }
 
+    #[allow(dead_code)]
     fn find_show_mut(&mut self, base_dir: &Path) -> Option<&mut Show> {
         self.entries.iter_mut().find_map(|e| {
             if let MediaEntry::Show(s) = e {

@@ -30,7 +30,6 @@ pub fn map_key(key: KeyEvent, app: &App) -> Action {
             KeyCode::PageDown | KeyCode::Char('J')   => Action::PageDown,
             KeyCode::Enter | KeyCode::Right           => Action::Select,
             KeyCode::Char('f')                        => Action::CycleFilter,
-            KeyCode::Char('k') /* handled above */    => Action::CycleKind,
             KeyCode::Char('t')                        => Action::CycleKind,
             KeyCode::Char('s')                        => Action::CycleSort,
             KeyCode::Char('/')                        => Action::SearchMode,
