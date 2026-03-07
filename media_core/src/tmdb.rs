@@ -1013,3 +1013,577 @@ fn clean_episode_title(s: &str) -> String {
     let words: Vec<&str> = s.split_whitespace().collect();
     words.join(" ")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── clean_title ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn clean_title_dot_separated_movie() {
+        assert_eq!(
+            clean_title("Tron.Legacy.2010.2160p.UHD.BluRay.REMUX.DV.P7.HDR.MULTI-BenT"),
+            "Tron Legacy"
+        );
+    }
+
+    #[test]
+    fn clean_title_strips_site_prefix() {
+        assert_eq!(
+            clean_title("[UsaBit.com] - Pirates.of.Silicon.Valley.1999.DVDRip.x264-RQQU"),
+            "Pirates of Silicon Valley"
+        );
+    }
+
+    #[test]
+    fn clean_title_anime_brackets() {
+        // Dots are replaced with spaces, so "Dr." becomes "Dr "
+        assert_eq!(
+            clean_title("Dr. Stone [Season 3 + Specials] [BD][1080p][HEVC 10bit x265][Batch]"),
+            "Dr Stone"
+        );
+    }
+
+    #[test]
+    fn clean_title_parenthesised_year() {
+        assert_eq!(
+            clean_title("Apocalypse Hotel (2025) S01E01 A True Hotel Is Always Storied"),
+            "Apocalypse Hotel"
+        );
+    }
+
+    #[test]
+    fn clean_title_unicode_colon_lookalike() {
+        // U+A789 MODIFIER LETTER COLON used in Windows-safe filenames
+        assert_eq!(
+            clean_title("Frieren\u{A789} Beyond Journey's End [BD][1080p][HEVC 10bit x265][Dual Audio][Tenrai-Sensei]"),
+            "Frieren: Beyond Journey's End"
+        );
+    }
+
+    #[test]
+    fn clean_title_simple_movie() {
+        assert_eq!(
+            clean_title("All.The.Bright.Places.2020.720p.NF.WEBRip.800MB.x264-GalaxyRG"),
+            "All The Bright Places"
+        );
+    }
+
+    #[test]
+    fn clean_title_4k_remux() {
+        assert_eq!(
+            clean_title("Amadeus.1984.4K.HDR.2160p BDRemux Ita Eng x265-NAHOM"),
+            "Amadeus"
+        );
+    }
+
+    #[test]
+    fn clean_title_season_token_truncation() {
+        assert_eq!(
+            clean_title("Delicious In Dungeon S01 1080p BluRay x265"),
+            "Delicious In Dungeon"
+        );
+    }
+
+    #[test]
+    fn clean_title_underscores() {
+        assert_eq!(
+            clean_title("The_Matrix_1999_BluRay_1080p_x264"),
+            "The Matrix"
+        );
+    }
+
+    // guessit-derived movie filenames
+    #[test]
+    fn clean_title_guessit_movies() {
+        assert_eq!(
+            clean_title("2012.2009.720p.BluRay.x264.DTS-METiS"),
+            "2012" // year in title but 2009 is the release year
+        );
+        assert_eq!(
+            clean_title("The.Shawshank.Redemption.1994.1080p.BluRay.x264"),
+            "The Shawshank Redemption"
+        );
+        // "2049" looks like a year so clean_title truncates before it
+        assert_eq!(
+            clean_title("Blade.Runner.2049.2017.2160p.UHD.BluRay.x265-TERMiNAL"),
+            "Blade Runner"
+        );
+        assert_eq!(
+            clean_title("A.Fistful.of.Dollars.1964.REMASTERED.1080p.BluRay"),
+            "A Fistful of Dollars"
+        );
+    }
+
+    // ── extract_year ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn extract_year_dot_separated() {
+        assert_eq!(extract_year("Tron.Legacy.2010.2160p"), Some(2010));
+    }
+
+    #[test]
+    fn extract_year_parenthesised() {
+        assert_eq!(extract_year("Apocalypse Hotel (2025)"), Some(2025));
+    }
+
+    #[test]
+    fn extract_year_underscore() {
+        assert_eq!(extract_year("The_Matrix_1999_BluRay"), Some(1999));
+    }
+
+    #[test]
+    fn extract_year_none_when_absent() {
+        assert_eq!(extract_year("Delicious In Dungeon"), None);
+    }
+
+    #[test]
+    fn extract_year_ignores_resolution_digits() {
+        // "1080" is not a valid year (< 1900)
+        assert_eq!(extract_year("Show.1080p.BluRay"), None);
+    }
+
+    #[test]
+    fn extract_year_old_film() {
+        assert_eq!(extract_year("Amadeus.1984.4K.HDR"), Some(1984));
+    }
+
+    // ── extract_season ───────────────────────────────────────────────────────
+
+    #[test]
+    fn extract_season_bare_s01() {
+        assert_eq!(extract_season("Show S01"), Some((1, "S1".into())));
+    }
+
+    #[test]
+    fn extract_season_word_season() {
+        // "Season 3" works when not inside brackets
+        assert_eq!(
+            extract_season("Dr. Stone Season 3"),
+            Some((3, "S3".into()))
+        );
+    }
+
+    #[test]
+    fn extract_season_word_in_brackets_not_found() {
+        // "[Season" token doesn't match "season" — known limitation
+        assert_eq!(
+            extract_season("Dr. Stone [Season 3 + Specials]"),
+            None
+        );
+    }
+
+    #[test]
+    fn extract_season_dot_separated() {
+        assert_eq!(extract_season("Show.S02.1080p"), Some((2, "S2".into())));
+    }
+
+    #[test]
+    fn extract_season_combined_sxexx() {
+        assert_eq!(
+            extract_season("Show S01E04 Title"),
+            Some((1, "S1".into()))
+        );
+    }
+
+    #[test]
+    fn extract_season_saison() {
+        assert_eq!(
+            extract_season("Les Revenants Saison 2"),
+            Some((2, "S2".into()))
+        );
+    }
+
+    #[test]
+    fn extract_season_none_when_absent() {
+        assert_eq!(extract_season("Amadeus 1984 4K HDR"), None);
+    }
+
+    // ── extract_metadata ─────────────────────────────────────────────────────
+
+    #[test]
+    fn metadata_full_scene_release() {
+        let m = extract_metadata("Tron.Legacy.2010.2160p.UHD.BluRay.REMUX.DV.P7.HDR.MULTI-BenT");
+        assert_eq!(m.year, Some(2010));
+        assert_eq!(m.resolution.as_deref(), Some("4K"));
+        assert_eq!(m.source.as_deref(), Some("BluRay"));
+        assert_eq!(m.codec, None); // no x264/x265 in this name
+        assert_eq!(m.hdr.as_deref(), Some("DV"));
+    }
+
+    #[test]
+    fn metadata_anime_bracket_release() {
+        let m = extract_metadata(
+            "Frieren\u{A789} Beyond Journey's End [BD][1080p][HEVC 10bit x265][Dual Audio][Tenrai-Sensei]",
+        );
+        assert_eq!(m.resolution.as_deref(), Some("1080p"));
+        assert_eq!(m.source.as_deref(), Some("BluRay"));
+        assert_eq!(m.codec.as_deref(), Some("x265"));
+    }
+
+    #[test]
+    fn metadata_webdl() {
+        let m = extract_metadata(
+            "Apocalypse Hotel (2025) S01E01 A True Hotel Is Always Storied (1080p WEB-DL H264 DDP 2.0 Japanese) [Cytox]",
+        );
+        assert_eq!(m.year, Some(2025));
+        assert_eq!(m.resolution.as_deref(), Some("1080p"));
+        assert_eq!(m.source.as_deref(), Some("WEB-DL"));
+        assert_eq!(m.codec.as_deref(), Some("x264"));
+        assert_eq!(m.season, Some((1, "S1".into())));
+    }
+
+    #[test]
+    fn metadata_webrip_720p() {
+        let m = extract_metadata("All.The.Bright.Places.2020.720p.NF.WEBRip.800MB.x264-GalaxyRG");
+        assert_eq!(m.year, Some(2020));
+        assert_eq!(m.resolution.as_deref(), Some("720p"));
+        assert_eq!(m.source.as_deref(), Some("WEBRip"));
+        // "x264-GalaxyRG" fused with group name — codec not extracted
+        assert_eq!(m.codec, None);
+    }
+
+    #[test]
+    fn metadata_4k_remux() {
+        let m = extract_metadata("Amadeus.1984.4K.HDR.2160p BDRemux Ita Eng x265-NAHOM");
+        assert_eq!(m.year, Some(1984));
+        assert_eq!(m.resolution.as_deref(), Some("4K"));
+        assert_eq!(m.source.as_deref(), Some("BluRay"));
+        assert_eq!(m.hdr.as_deref(), Some("HDR"));
+        // "x265-NAHOM" is a single token; clean trims non-alphanumeric but
+        // the dash+group stays fused, so codec is not extracted
+        assert_eq!(m.codec, None);
+    }
+
+    #[test]
+    fn metadata_episode_fallback() {
+        let m = extract_metadata_with_episodes(
+            "Some Show",
+            &[
+                "Some Show - S01E01 [1080p][x265]".into(),
+                "Some Show - S01E02 [1080p][x265]".into(),
+            ],
+        );
+        assert_eq!(m.resolution.as_deref(), Some("1080p"));
+        assert_eq!(m.codec.as_deref(), Some("x265"));
+    }
+
+    #[test]
+    fn metadata_no_tags() {
+        let m = extract_metadata("My Home Video");
+        assert_eq!(m.year, None);
+        assert_eq!(m.resolution, None);
+        assert_eq!(m.source, None);
+        assert_eq!(m.codec, None);
+        assert_eq!(m.hdr, None);
+    }
+
+    // ── parse_episode ────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_episode_standard_sxxexx() {
+        let ep = parse_episode("Delicious In Dungeon - S01E01 - Hot PotTart");
+        assert_eq!(ep.season_num, 1);
+        assert_eq!(ep.episode_num, 1);
+        assert_eq!(ep.episode_title.as_deref(), Some("Hot PotTart"));
+    }
+
+    #[test]
+    fn parse_episode_fansub_with_crc() {
+        let ep = parse_episode("[DiabloTripleA] Dr Stone - S03E01 [D5ACD9A8]");
+        assert_eq!(ep.season_num, 3);
+        assert_eq!(ep.episode_num, 1);
+    }
+
+    #[test]
+    fn parse_episode_bare_number() {
+        let ep = parse_episode("[DB]Gurren Lagann_-_08_(Dual Audio_10bit_BD1080p_x265)");
+        assert_eq!(ep.season_num, 1);
+        assert_eq!(ep.episode_num, 8);
+    }
+
+    #[test]
+    fn parse_episode_with_release_tags_in_parens() {
+        // [Cytox] blocks noise stripping so the full tail survives as episode title
+        let ep = parse_episode(
+            "Apocalypse Hotel (2025) S01E01 A True Hotel Is Always Storied (1080p WEB-DL H264 DDP 2.0 Japanese) [Cytox]",
+        );
+        assert_eq!(ep.season_num, 1);
+        assert_eq!(ep.episode_num, 1);
+        assert!(ep.episode_title.as_deref().unwrap().starts_with("A True Hotel"));
+    }
+
+    #[test]
+    fn parse_episode_release_tags_stripped_when_noise() {
+        let ep = parse_episode(
+            "Show - S01E03 - Great Title (1080p WEB-DL)",
+        );
+        assert_eq!(ep.season_num, 1);
+        assert_eq!(ep.episode_num, 3);
+        assert_eq!(ep.episode_title.as_deref(), Some("Great Title"));
+    }
+
+    #[test]
+    fn parse_episode_no_title() {
+        let ep = parse_episode("Show S02E05 [1080p][x265]");
+        assert_eq!(ep.season_num, 2);
+        assert_eq!(ep.episode_num, 5);
+        assert_eq!(ep.episode_title, None);
+    }
+
+    #[test]
+    fn parse_episode_lowercase_sxexx() {
+        let ep = parse_episode("show.s1e12.title.720p");
+        assert_eq!(ep.season_num, 1);
+        assert_eq!(ep.episode_num, 12);
+    }
+
+    #[test]
+    fn parse_episode_three_digit_ep() {
+        let ep = parse_episode("Long Running Show - S01E100 - Finale");
+        assert_eq!(ep.season_num, 1);
+        assert_eq!(ep.episode_num, 100);
+        assert_eq!(ep.episode_title.as_deref(), Some("Finale"));
+    }
+
+    #[test]
+    fn parse_episode_unparseable() {
+        let ep = parse_episode("random file without episode info");
+        assert_eq!(ep.season_num, 0);
+        assert_eq!(ep.episode_num, 0);
+        assert_eq!(ep.episode_title, None);
+    }
+
+    // guessit-derived episode filenames
+    #[test]
+    fn parse_episode_guessit_standard() {
+        let ep = parse_episode("The.Flash.2014.S03E07.Killer.Frost.720p.BluRay");
+        assert_eq!(ep.season_num, 3);
+        assert_eq!(ep.episode_num, 7);
+    }
+
+    #[test]
+    fn parse_episode_guessit_anime_bare() {
+        // Bare episode number after dash
+        let ep = parse_episode("[HorribleSubs] Naruto Shippuuden - 495 [720p]");
+        assert_eq!(ep.episode_num, 495);
+        assert_eq!(ep.season_num, 1); // fallback
+    }
+
+    // ── expand_token ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn expand_token_fused_bd1080p() {
+        assert_eq!(expand_token("BD1080p"), vec!["BD", "1080p"]);
+    }
+
+    #[test]
+    fn expand_token_keeps_x265() {
+        assert_eq!(expand_token("x265"), vec!["x265"]);
+    }
+
+    #[test]
+    fn expand_token_keeps_sxexx() {
+        assert_eq!(expand_token("S01E02"), vec!["S01E02"]);
+    }
+
+    #[test]
+    fn expand_token_plain_resolution() {
+        assert_eq!(expand_token("1080p"), vec!["1080p"]);
+    }
+
+    #[test]
+    fn expand_token_web720p() {
+        assert_eq!(expand_token("WEB720p"), vec!["WEB", "720p"]);
+    }
+
+    // ── bracket_tokens ───────────────────────────────────────────────────────
+
+    #[test]
+    fn bracket_tokens_anime_style() {
+        let tokens = bracket_tokens("Title [BD][1080p][HEVC 10bit x265]");
+        assert!(tokens.contains(&"BD".to_string()));
+        assert!(tokens.contains(&"1080p".to_string()));
+        assert!(tokens.contains(&"HEVC".to_string()));
+        assert!(tokens.contains(&"x265".to_string()));
+    }
+
+    #[test]
+    fn bracket_tokens_fused_inside() {
+        let tokens = bracket_tokens("[DB]Title [BD1080p]");
+        assert!(tokens.contains(&"DB".to_string()));
+        assert!(tokens.contains(&"BD".to_string()));
+        assert!(tokens.contains(&"1080p".to_string()));
+    }
+
+    #[test]
+    fn bracket_tokens_parentheses() {
+        let tokens = bracket_tokens("Show (2025) (1080p WEB-DL)");
+        assert!(tokens.contains(&"2025".to_string()));
+        assert!(tokens.contains(&"1080p".to_string()));
+    }
+
+    // ── strip_brackets ───────────────────────────────────────────────────────
+
+    #[test]
+    fn strip_brackets_removes_all() {
+        assert_eq!(
+            strip_brackets("Title [BD][1080p] Stuff"),
+            "Title  Stuff"
+        );
+    }
+
+    #[test]
+    fn strip_brackets_nested_ignored() {
+        assert_eq!(strip_brackets("A [B [C] D] E"), "A  E");
+    }
+
+    // ── is_year ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn is_year_valid() {
+        assert!(is_year("2024"));
+        assert!(is_year("1984"));
+        assert!(is_year("1900"));
+    }
+
+    #[test]
+    fn is_year_invalid() {
+        assert!(!is_year("1080")); // too early
+        assert!(!is_year("2101")); // too late
+        assert!(!is_year("abcd"));
+        assert!(!is_year("20"));
+    }
+
+    // ── is_season_token ──────────────────────────────────────────────────────
+
+    #[test]
+    fn is_season_token_various() {
+        assert!(is_season_token("season"));
+        assert!(is_season_token("saison"));
+        assert!(is_season_token("s01"));
+        assert!(is_season_token("s1"));
+        assert!(!is_season_token("s"));
+        assert!(!is_season_token("show"));
+        assert!(!is_season_token("s01e02")); // too long
+    }
+
+    // ── find_sxexx ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn find_sxexx_standard() {
+        let (s, e, after) = find_sxexx("Show - S01E04 - Title").unwrap();
+        assert_eq!(s, 1);
+        assert_eq!(e, 4);
+        assert_eq!(after, "Title");
+    }
+
+    #[test]
+    fn find_sxexx_lowercase() {
+        let (s, e, _) = find_sxexx("show.s2e10.stuff").unwrap();
+        assert_eq!(s, 2);
+        assert_eq!(e, 10);
+    }
+
+    #[test]
+    fn find_sxexx_no_match() {
+        assert!(find_sxexx("no episode here").is_none());
+    }
+
+    #[test]
+    fn find_sxexx_word_boundary() {
+        // "season" contains 's' but should not match as SxxExx
+        assert!(find_sxexx("season eight").is_none());
+    }
+
+    // ── find_bare_episode_number ─────────────────────────────────────────────
+
+    #[test]
+    fn find_bare_ep_after_dash() {
+        assert_eq!(find_bare_episode_number("Show - 08"), Some(8));
+    }
+
+    #[test]
+    fn find_bare_ep_three_digits() {
+        assert_eq!(find_bare_episode_number("Show - 495"), Some(495));
+    }
+
+    #[test]
+    fn find_bare_ep_none() {
+        assert_eq!(find_bare_episode_number("Show Title Only"), None);
+    }
+
+    // ── clean_episode_title ──────────────────────────────────────────────────
+
+    #[test]
+    fn clean_episode_title_strips_dashes() {
+        assert_eq!(clean_episode_title(" - Hot Pot"), "Hot Pot");
+    }
+
+    #[test]
+    fn clean_episode_title_bracket_is_not_title() {
+        assert_eq!(clean_episode_title("[1080p][x265]"), "");
+    }
+
+    #[test]
+    fn clean_episode_title_collapses_whitespace() {
+        assert_eq!(clean_episode_title("  A   Long   Title  "), "A Long Title");
+    }
+
+    // ── regex_strip_trailing_hash ────────────────────────────────────────────
+
+    #[test]
+    fn strip_trailing_hash_8hex() {
+        assert_eq!(
+            regex_strip_trailing_hash("Dr Stone - S03E01 [D5ACD9A8]"),
+            "Dr Stone - S03E01"
+        );
+    }
+
+    #[test]
+    fn strip_trailing_hash_no_hash() {
+        assert_eq!(
+            regex_strip_trailing_hash("Show - S01E01 - Title"),
+            "Show - S01E01 - Title"
+        );
+    }
+
+    // ── strip_trailing_release_tags ──────────────────────────────────────────
+
+    #[test]
+    fn strip_trailing_release_tags_parens_and_brackets() {
+        // [Cytox] is not a noise tag, so stripping stops there — the inner
+        // (1080p ...) noise parens are unreachable. Known limitation.
+        assert_eq!(
+            strip_trailing_release_tags(
+                "Title (1080p WEB-DL H264 DDP 2.0 Japanese) [Cytox]"
+            ),
+            "Title (1080p WEB-DL H264 DDP 2.0 Japanese) [Cytox]"
+        );
+    }
+
+    #[test]
+    fn strip_trailing_release_tags_noise_bracket() {
+        assert_eq!(
+            strip_trailing_release_tags("Title [1080p x265]"),
+            "Title"
+        );
+    }
+
+    #[test]
+    fn strip_trailing_release_tags_noise_parens() {
+        assert_eq!(
+            strip_trailing_release_tags("Title (1080p WEB-DL)"),
+            "Title"
+        );
+    }
+
+    #[test]
+    fn strip_trailing_release_tags_keeps_non_noise() {
+        assert_eq!(
+            strip_trailing_release_tags("Title (Directors Cut)"),
+            "Title (Directors Cut)"
+        );
+    }
+}

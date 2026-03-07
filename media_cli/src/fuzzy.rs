@@ -103,3 +103,133 @@ pub fn print_not_found(query: &str) {
     eprintln!("  no entry matches \"{}\"", query);
     eprintln!("  hint: run `mediavault-cli ls` to see all titles, or try a shorter search term");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use media_core::{MediaEntry, MediaMetadata, Movie, MovieState};
+    use std::path::PathBuf;
+
+    fn make_movie(title: &str, clean_title: &str) -> MediaEntry {
+        MediaEntry::Movie(Movie {
+            title: title.to_string(),
+            base_dir: PathBuf::from("."),
+            video_path: PathBuf::from(format!("{title}.mkv")),
+            video_mtime: None,
+            state: MovieState::default(),
+            poster_path: PathBuf::from("poster.jpg"),
+            metadata: MediaMetadata {
+                clean_title: clean_title.to_string(),
+                ..Default::default()
+            },
+        })
+    }
+
+    // ── parse_ep_spec ────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_ep_spec_standard() {
+        assert_eq!(parse_ep_spec("s01e04"), Some((1, 4)));
+    }
+
+    #[test]
+    fn parse_ep_spec_uppercase() {
+        assert_eq!(parse_ep_spec("S01E04"), Some((1, 4)));
+    }
+
+    #[test]
+    fn parse_ep_spec_short() {
+        assert_eq!(parse_ep_spec("s1e4"), Some((1, 4)));
+    }
+
+    #[test]
+    fn parse_ep_spec_mixed_case() {
+        assert_eq!(parse_ep_spec("S3e12"), Some((3, 12)));
+    }
+
+    #[test]
+    fn parse_ep_spec_invalid_no_s() {
+        assert_eq!(parse_ep_spec("e04"), None);
+    }
+
+    #[test]
+    fn parse_ep_spec_invalid_no_e() {
+        assert_eq!(parse_ep_spec("s01"), None);
+    }
+
+    #[test]
+    fn parse_ep_spec_invalid_garbage() {
+        assert_eq!(parse_ep_spec("hello"), None);
+    }
+
+    #[test]
+    fn parse_ep_spec_empty() {
+        assert_eq!(parse_ep_spec(""), None);
+    }
+
+    // ── match_entry ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn match_entry_exact() {
+        let entries = vec![
+            make_movie("Tron.Legacy.2010", "Tron Legacy"),
+            make_movie("Tron.1982", "Tron"),
+        ];
+        match match_entry(&entries, "tron") {
+            MatchResult::One(e) => assert_eq!(e.metadata().clean_title, "Tron"),
+            other => panic!("Expected One, got {:?}", matches!(other, MatchResult::None)),
+        }
+    }
+
+    #[test]
+    fn match_entry_starts_with() {
+        let entries = vec![
+            make_movie("Blade.Runner.2049", "Blade Runner 2049"),
+            make_movie("The.Matrix", "The Matrix"),
+        ];
+        match match_entry(&entries, "blade") {
+            MatchResult::One(e) => assert_eq!(e.metadata().clean_title, "Blade Runner 2049"),
+            _ => panic!("Expected One"),
+        }
+    }
+
+    #[test]
+    fn match_entry_word_starts() {
+        let entries = vec![
+            make_movie("The.Matrix", "The Matrix"),
+            make_movie("Amadeus", "Amadeus"),
+        ];
+        match match_entry(&entries, "mat") {
+            MatchResult::One(e) => assert_eq!(e.metadata().clean_title, "The Matrix"),
+            _ => panic!("Expected One"),
+        }
+    }
+
+    #[test]
+    fn match_entry_contains() {
+        let entries = vec![make_movie("Amadeus.1984", "Amadeus")];
+        match match_entry(&entries, "adeu") {
+            MatchResult::One(e) => assert_eq!(e.metadata().clean_title, "Amadeus"),
+            _ => panic!("Expected One"),
+        }
+    }
+
+    #[test]
+    fn match_entry_none() {
+        let entries = vec![make_movie("Tron", "Tron")];
+        assert!(matches!(match_entry(&entries, "zzz"), MatchResult::None));
+    }
+
+    #[test]
+    fn match_entry_ambiguous() {
+        let entries = vec![
+            make_movie("Tron.Legacy", "Tron Legacy"),
+            make_movie("Tron.Uprising", "Tron Uprising"),
+        ];
+        // "tron" starts-with matches both equally
+        match match_entry(&entries, "tron") {
+            MatchResult::Many(v) => assert_eq!(v.len(), 2),
+            _ => panic!("Expected Many"),
+        }
+    }
+}
