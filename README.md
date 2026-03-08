@@ -3,6 +3,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Download](https://img.shields.io/badge/download-releases-blue.svg)](https://github.com/bornacvitanic/mediavault/releases)
 
+<img width="2559" height="1439" alt="GUI" src="https://github.com/user-attachments/assets/29580728-388e-4f88-9c1d-ca1adb0eee50" />
+
 # MediaVault
 
 A lightweight watch tracker for your local movie and TV show files. Point it at a folder and it tracks what you've watched, where you left off, and your notes — all stored as small human-readable sidecar files next to your media. No server, no database, no media indexing. Not a media center like Plex or Jellyfin — just watch state tracking that stays out of your way.
@@ -80,6 +82,8 @@ mediavault-cli status "frieren"
 ```shell
 mediavault-tui
 ```
+
+<img width="1232" height="619" alt="TUI" src="https://github.com/user-attachments/assets/b70a4e90-bf45-4939-a74e-80a135526124" />
 
 ## Library Detection Rules
 
