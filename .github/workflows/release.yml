@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build release binaries
+        run: cargo build --release
+
+      - name: Package binaries
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path staging
+          Copy-Item target/release/mediavault.exe staging/
+          Copy-Item target/release/mediavault-cli.exe staging/
+          Copy-Item target/release/mediavault-tui.exe staging/
+          Compress-Archive -Path staging/* -DestinationPath "mediavault-${{ github.ref_name }}-windows-x86_64.zip"
+
+      - name: Generate changelog
+        id: cliff
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.cliff.outputs.content }}
+          files: mediavault-${{ github.ref_name }}-windows-x86_64.zip
