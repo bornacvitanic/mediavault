@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] - 2026-03-08
+
+### Features
+
+- Add release workflow for automated binary distribution
+
+
 ## [0.1.1] - 2026-03-08
 
 ### Bug Fixes
@@ -120,6 +127,8 @@ and IDE config.
 
 
 ### Updates
+
+- Update changelog for v0.1.1 release
 
 - Update README to match project conventions
 

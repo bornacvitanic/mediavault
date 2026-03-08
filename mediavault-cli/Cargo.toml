@@ -1,6 +1,6 @@
 [package]
 name = "mediavault-cli"
-version = "0.1.1"
+version = "0.1.2"
 description = "CLI frontend for MediaVault — query and manage your media library from the terminal"
 authors.workspace = true
 license-file.workspace = true
@@ -15,7 +15,7 @@ name = "mediavault-cli"
 path = "src/main.rs"
 
 [dependencies]
-mediavault-core = { path = "../mediavault-core", version = "0.1.1" }
+mediavault-core = { path = "../mediavault-core", version = "0.1.2" }
 clap = { version = "4", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 serde_json = "1"
