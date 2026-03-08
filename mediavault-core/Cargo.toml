@@ -1,11 +1,12 @@
 [package]
 name = "mediavault-core"
-version = "0.1.0"
+version = "0.1.1"
 description = "Core library for MediaVault — scanning, sidecar I/O, TMDB integration, and metadata parsing"
 authors.workspace = true
 license-file.workspace = true
 repository.workspace = true
 edition.workspace = true
+readme = "../README.md"
 keywords = ["media", "library", "tmdb", "metadata", "sidecar"]
 categories = ["multimedia", "filesystem"]
 
