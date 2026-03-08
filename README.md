@@ -23,16 +23,18 @@ A lightweight watch tracker for your local movie and TV show files. Point it at 
 
 ## Roadmap
 
-- [ ] Cross-platform support (Linux, macOS)
+- [ ] Subtitle detection and display in metadata tags
+- [ ] Subtitle fetching (OpenSubtitles integration)
 - [ ] Bulk operations in CLI
 - [ ] Search and filtering in GUI/TUI
+- [ ] macOS support
 
 ## Getting Started
 
 ### Requirements
 
 - Rust toolchain (1.70+)
-- Windows (Linux/macOS support planned)
+- Windows or Linux (macOS untested but may work)
 - Optional: [TMDB API key](https://www.themoviedb.org/settings/api) for poster fetching
 
 ### Installation
@@ -49,9 +51,9 @@ A lightweight watch tracker for your local movie and TV show files. Point it at 
    ```
 
 3. Binaries are at:
-   - `target/release/mediavault.exe` (GUI)
-   - `target/release/mediavault-cli.exe` (CLI)
-   - `target/release/mediavault-tui.exe` (TUI)
+   - `target/release/mediavault` (GUI) — `.exe` on Windows
+   - `target/release/mediavault-cli` (CLI)
+   - `target/release/mediavault-tui` (TUI)
 
 ## Usage
 
@@ -92,6 +94,7 @@ mediavault-tui
 |---|---|
 | `Root/movie.mkv` | Movie (title = filename) |
 | `Root/The Matrix/the.matrix.mkv` | Movie (title = folder name) |
+| `Root/The Matrix/the.matrix.mkv` + `Featurettes/...` | Movie (extras ignored) |
 | `Root/Breaking Bad/S01E01.mkv` | Show |
 | `Root/Breaking Bad/Season 1/S01E01.mkv` | Show with season grouping |
 
@@ -131,7 +134,8 @@ Get a free key at https://www.themoviedb.org/settings/api
 
 The key is saved to:
 ```
-%APPDATA%\mediavault\config.toml
+Windows: %APPDATA%\mediavault\config.toml
+Linux:   ~/.config/mediavault/config.toml
 ```
 
 ## Project Structure

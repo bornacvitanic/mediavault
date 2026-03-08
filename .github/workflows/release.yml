@@ -8,8 +8,21 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: windows-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+            suffix: .exe
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+            suffix: ""
+
+    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,7 +31,8 @@ jobs:
       - name: Build release binaries
         run: cargo build --release
 
-      - name: Package binaries
+      - name: Package binaries (Windows)
+        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path staging
@@ -26,6 +40,34 @@ jobs:
           Copy-Item target/release/mediavault-cli.exe staging/
           Copy-Item target/release/mediavault-tui.exe staging/
           Compress-Archive -Path staging/* -DestinationPath "mediavault-${{ github.ref_name }}-windows-x86_64.zip"
+
+      - name: Package binaries (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir staging
+          cp target/release/mediavault staging/
+          cp target/release/mediavault-cli staging/
+          cp target/release/mediavault-tui staging/
+          tar -czf "mediavault-${{ github.ref_name }}-linux-x86_64.tar.gz" -C staging .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediavault-${{ matrix.os }}
+          path: mediavault-${{ github.ref_name }}-*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
 
       - name: Generate changelog
         id: cliff
@@ -38,4 +80,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body: ${{ steps.cliff.outputs.content }}
-          files: mediavault-${{ github.ref_name }}-windows-x86_64.zip
+          files: |
+            mediavault-${{ github.ref_name }}-windows-x86_64.zip
+            mediavault-${{ github.ref_name }}-linux-x86_64.tar.gz

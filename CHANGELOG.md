@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] - 2026-03-08
+
+### Features
+
+- Improve movie vs show classification with extras folder detection
+  - Skip known extras folders (Featurettes/, Extras/, Deleted Scenes/, etc.) when classifying
+  - Use episode-pattern detection (S01E01) as tiebreaker for multi-video folders
+  - Pick largest file as main feature when no episode patterns are found
+- Add Linux support with CI testing and release binaries
+- Add subtitle detection and fetching to roadmap
+
+### Changes
+
+- CI now tests on both Windows and Linux
+- Release workflow produces both Windows (.zip) and Linux (.tar.gz) binaries
+- Update README to reflect Linux support and new classification rules
+
 ## [0.1.2] - 2026-03-08
 
 ### Features
