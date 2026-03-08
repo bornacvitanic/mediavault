@@ -55,6 +55,12 @@ struct PosterLoaded {
     image: ColorImage,
 }
 
+/// Message sent from a background subtitle-fetch thread back to the UI.
+struct SubFetchResult {
+    video_path: PathBuf,
+    result: Result<String, String>, // Ok(filename) or Err(message)
+}
+
 // ── Sort / filter state ───────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq)]
@@ -126,6 +132,11 @@ struct App {
     /// don't re-spawn threads on every frame.
     poster_attempted: std::collections::HashSet<PathBuf>,
 
+    // Subtitle fetch channel
+    sub_rx: Receiver<SubFetchResult>,
+    sub_tx: Sender<SubFetchResult>,
+    sub_status: Option<String>,
+
     // Card zoom (1.0 = default size)
     card_zoom: f32,
     /// Index into the currently displayed (filtered/sorted) card list.
@@ -138,13 +149,16 @@ struct App {
     config: AppConfig,
     show_settings: bool,
     api_key_buf: String,
+    os_api_key_buf: String,
 }
 
 impl App {
     fn new(cc: &eframe::CreationContext) -> Self {
         let (poster_tx, poster_rx) = unbounded();
+        let (sub_tx, sub_rx) = unbounded();
         let mut config = load_config();
         let api_key_buf = config.tmdb_api_key.clone();
+        let os_api_key_buf = config.opensubtitles_api_key.clone();
         // Restore last library path from eframe persistent storage.
         let library_root = cc
             .storage
@@ -180,12 +194,16 @@ impl App {
             poster_rx,
             poster_tx,
             poster_attempted: Default::default(),
+            sub_rx,
+            sub_tx,
+            sub_status: None,
             card_zoom,
             focused_idx: None,
             is_maximized: false,
             config,
             show_settings: false,
             api_key_buf,
+            os_api_key_buf,
         }
     }
 
@@ -225,6 +243,43 @@ impl App {
                 TextureOptions::LINEAR,
             );
             self.textures.insert(loaded.poster_path, texture);
+        }
+    }
+
+    /// Drain the subtitle-fetch channel and refresh external subs for any
+    /// video that just had a subtitle downloaded.
+    fn poll_subtitle_fetches(&mut self) {
+        while let Ok(msg) = self.sub_rx.try_recv() {
+            match msg.result {
+                Ok(fname) => {
+                    self.sub_status = Some(format!("Downloaded: {fname}"));
+                    // Refresh external_subs for the video that got a new subtitle
+                    for entry in &mut self.entries {
+                        match entry {
+                            MediaEntry::Movie(m) if m.video_path == msg.video_path => {
+                                m.external_subs =
+                                    mediavault_core::find_external_subtitles(&m.video_path);
+                            }
+                            MediaEntry::Show(s) => {
+                                for season in &mut s.seasons {
+                                    for ep in &mut season.episodes {
+                                        if ep.video_path == msg.video_path {
+                                            ep.external_subs =
+                                                mediavault_core::find_external_subtitles(
+                                                    &ep.video_path,
+                                                );
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Err(e) => {
+                    self.sub_status = Some(format!("Fetch failed: {e}"));
+                }
+            }
         }
     }
 
@@ -310,6 +365,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.is_maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
         self.poll_posters(ctx);
+        self.poll_subtitle_fetches();
 
         // ── Top menu bar ──────────────────────────────────────────────────────
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
@@ -347,8 +403,20 @@ impl eframe::App for App {
                     ui.text_edit_singleline(&mut self.api_key_buf);
                     ui.small("Get a free key at https://www.themoviedb.org/settings/api");
                     ui.add_space(4.0);
-                    if ui.button("Save API Key").clicked() {
+                    if ui.button("Save TMDB Key").clicked() {
                         self.config.tmdb_api_key = self.api_key_buf.trim().to_string();
+                        if let Err(e) = save_config(&self.config) {
+                            eprintln!("Failed to save config: {}", e);
+                        }
+                    }
+                    ui.separator();
+                    ui.label("OpenSubtitles API Key:");
+                    ui.text_edit_singleline(&mut self.os_api_key_buf);
+                    ui.small("Get a free key at https://www.opensubtitles.com/consumers");
+                    ui.add_space(4.0);
+                    if ui.button("Save OpenSubtitles Key").clicked() {
+                        self.config.opensubtitles_api_key =
+                            self.os_api_key_buf.trim().to_string();
                         if let Err(e) = save_config(&self.config) {
                             eprintln!("Failed to save config: {}", e);
                         }
@@ -439,6 +507,7 @@ impl eframe::App for App {
                 DetailPanel::None => unreachable!(),
             };
 
+            let mut pending_fetch: Option<SubFetchRequest> = None;
             egui::SidePanel::right("detail_panel")
                 .min_width(340.0)
                 .max_width(480.0)
@@ -447,11 +516,13 @@ impl eframe::App for App {
                         if ui.button("Close").clicked() {
                             self.flush_comments();
                             self.detail = DetailPanel::None;
+                            self.sub_status = None;
                             return;
                         }
                         ui.separator();
 
-                        if detail_is_movie {
+                        let has_os_key = !self.config.opensubtitles_api_key.is_empty();
+                        let fetch_req = if detail_is_movie {
                             render_movie_detail(
                                 ui,
                                 &detail_key,
@@ -460,7 +531,9 @@ impl eframe::App for App {
                                 self.config.auto_mark_watched,
                                 &mut self.comment_buf,
                                 &mut self.comment_dirty,
-                            );
+                                &mut self.sub_status,
+                                has_os_key,
+                            )
                         } else {
                             // For shows, resolve poster_path → base_dir (shows have unique dirs)
                             let base = self
@@ -477,10 +550,56 @@ impl eframe::App for App {
                                 self.config.auto_mark_watched,
                                 &mut self.comment_buf,
                                 &mut self.comment_dirty,
-                            );
+                                &mut self.sub_status,
+                                has_os_key,
+                            )
+                        };
+                        if fetch_req.is_some() {
+                            pending_fetch = fetch_req;
                         }
                     });
                 });
+
+            // Spawn background subtitle fetch if requested
+            if let Some(req) = pending_fetch {
+                let api_key = self.config.opensubtitles_api_key.clone();
+                let tx = self.sub_tx.clone();
+                let ctx2 = ctx.clone();
+                self.sub_status = Some("Searching...".into());
+                thread::spawn(move || {
+                    let result = (|| -> Result<String, String> {
+                        let results = mediavault_core::opensubtitles::search_subtitles(
+                            &api_key,
+                            &req.video_path,
+                            &req.title,
+                            req.year,
+                            req.season,
+                            req.episode,
+                            "",
+                        )?;
+                        if results.is_empty() {
+                            return Err("No subtitles found".into());
+                        }
+                        let best = &results[0];
+                        let path = mediavault_core::opensubtitles::download_subtitle(
+                            &api_key,
+                            best.file_id,
+                            &req.video_path,
+                            &best.language,
+                        )?;
+                        Ok(path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string())
+                    })();
+                    let _ = tx.send(SubFetchResult {
+                        video_path: req.video_path,
+                        result,
+                    });
+                    ctx2.request_repaint();
+                });
+            }
         }
 
         // ── Main grid ────────────────────────────────────────────────────────
@@ -620,6 +739,7 @@ impl eframe::App for App {
                             let comments = load_comments_from_path(&cp);
                             self.comment_buf = comments.markdown;
                             self.comment_dirty = false;
+                            self.sub_status = None;
                             self.detail = if is_movie {
                                 DetailPanel::Movie(poster)
                             } else {
@@ -802,6 +922,7 @@ impl eframe::App for App {
                                     self.comment_buf = String::new();
                                 }
                                 self.comment_dirty = false;
+                                self.sub_status = None;
                                 self.detail = if *is_movie {
                                     DetailPanel::Movie(poster_path.clone())
                                 } else {
@@ -1125,6 +1246,15 @@ fn render_media_card(
 
 // ── Detail panels ─────────────────────────────────────────────────────────────
 
+/// A request to fetch subtitles from a detail panel, dispatched to a background thread.
+struct SubFetchRequest {
+    video_path: PathBuf,
+    title: String,
+    year: Option<u32>,
+    season: Option<u32>,
+    episode: Option<u32>,
+}
+
 fn render_movie_detail(
     ui: &mut egui::Ui,
     poster_key: &Path, // unique per movie — used to look up the correct entry
@@ -1133,7 +1263,9 @@ fn render_movie_detail(
     auto_mark_watched: bool,
     comment_buf: &mut String,
     comment_dirty: &mut bool,
-) {
+    sub_status: &mut Option<String>,
+    has_os_key: bool,
+) -> Option<SubFetchRequest> {
     let movie = match entries.iter_mut().find_map(|e| {
         if let MediaEntry::Movie(m) = e {
             if m.poster_path == poster_key {
@@ -1146,8 +1278,10 @@ fn render_movie_detail(
         }
     }) {
         Some(m) => m,
-        None => return,
+        None => return None,
     };
+
+    let mut fetch_request: Option<SubFetchRequest> = None;
 
     // ── Header: poster + title ────────────────────────────────────────────────
     let poster_key = movie.poster_path.clone();
@@ -1237,6 +1371,34 @@ fn render_movie_detail(
         }
     }
 
+    // Fetch subtitles button
+    if has_os_key {
+        ui.horizontal(|ui| {
+            if ui.button("Fetch Subtitles").clicked() {
+                fetch_request = Some(SubFetchRequest {
+                    video_path: movie.video_path.clone(),
+                    title: heading.clone(),
+                    year: movie.metadata.year,
+                    season: None,
+                    episode: None,
+                });
+            }
+            if let Some(status) = sub_status.take() {
+                ui.label(
+                    egui::RichText::new(&status)
+                        .size(10.0)
+                        .color(if status.starts_with("Fetch failed") {
+                            egui::Color32::from_rgb(220, 80, 80)
+                        } else {
+                            egui::Color32::from_rgb(80, 180, 80)
+                        }),
+                );
+                // Put it back so it stays visible until next fetch
+                *sub_status = Some(status);
+            }
+        });
+    }
+
     ui.separator();
 
     // ── Actions ───────────────────────────────────────────────────────────────
@@ -1287,6 +1449,8 @@ fn render_movie_detail(
 
     ui.separator();
     render_comments_editor(ui, comment_buf, comment_dirty);
+
+    fetch_request
 }
 
 fn render_show_detail(
@@ -1297,7 +1461,9 @@ fn render_show_detail(
     auto_mark_watched: bool,
     comment_buf: &mut String,
     comment_dirty: &mut bool,
-) {
+    sub_status: &mut Option<String>,
+    has_os_key: bool,
+) -> Option<SubFetchRequest> {
     // ── Collect display data (immutable borrow) ───────────────────────────────
     let (poster_key, heading, tags, watched_count, total, next_path, seasons_data) = {
         let show = match entries.iter().find_map(|e| {
@@ -1312,7 +1478,7 @@ fn render_show_detail(
             }
         }) {
             Some(s) => s,
-            None => return,
+            None => return None,
         };
         let clean = show.metadata.clean_title.clone();
         let heading = if clean.is_empty() {
@@ -1486,6 +1652,42 @@ fn render_show_detail(
         }
     });
 
+    // Fetch subtitles button — finds first episode without subs
+    let mut fetch_request: Option<SubFetchRequest> = None;
+    if has_os_key {
+        ui.horizontal(|ui| {
+            if ui.button("Fetch Subtitles").clicked() {
+                // Find first episode without subs
+                if let Some((_, label, _, _, _, vp, _)) = seasons_data
+                    .iter()
+                    .flat_map(|(_, eps)| eps.iter())
+                    .find(|(_, _, _, _, _, _, sc)| *sc == 0)
+                {
+                    let (sn, en) = parse_ep_label(label);
+                    fetch_request = Some(SubFetchRequest {
+                        video_path: vp.clone(),
+                        title: heading.clone(),
+                        year: None,
+                        season: sn,
+                        episode: en,
+                    });
+                }
+            }
+            if let Some(status) = sub_status.take() {
+                ui.label(
+                    egui::RichText::new(&status)
+                        .size(10.0)
+                        .color(if status.starts_with("Fetch failed") {
+                            egui::Color32::from_rgb(220, 80, 80)
+                        } else {
+                            egui::Color32::from_rgb(80, 180, 80)
+                        }),
+                );
+                *sub_status = Some(status);
+            }
+        });
+    }
+
     ui.separator();
 
     // ── Episode list ──────────────────────────────────────────────────────────
@@ -1627,6 +1829,8 @@ fn render_show_detail(
 
     ui.separator();
     render_comments_editor(ui, comment_buf, comment_dirty);
+
+    fetch_request
 }
 
 fn render_comments_editor(ui: &mut egui::Ui, comment_buf: &mut String, comment_dirty: &mut bool) {
@@ -1737,4 +1941,21 @@ fn load_image_from_disk(path: &Path) -> Result<ColorImage, Box<dyn std::error::E
         size: [w as usize, h as usize],
         pixels,
     })
+}
+
+/// Parse season and episode numbers from a display label like "S01E04" or "S01E04  Title".
+fn parse_ep_label(label: &str) -> (Option<u32>, Option<u32>) {
+    let lo = label.to_lowercase();
+    if !lo.starts_with('s') {
+        return (None, None);
+    }
+    let rest = &lo[1..];
+    let Some(e_pos) = rest.find('e') else {
+        return (None, None);
+    };
+    let s: Option<u32> = rest[..e_pos].parse().ok();
+    let ep_part = &rest[e_pos + 1..];
+    let ep_digits: String = ep_part.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let e: Option<u32> = ep_digits.parse().ok();
+    (s, e)
 }

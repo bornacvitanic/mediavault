@@ -1,5 +1,6 @@
 mod library;
 pub mod models;
+pub mod opensubtitles;
 mod player;
 pub mod scanner;
 pub mod sidecar;

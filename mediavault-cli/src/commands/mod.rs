@@ -1,4 +1,5 @@
 pub mod done;
+pub mod fetch_subs;
 pub mod get;
 pub mod is_watched;
 pub mod ls;

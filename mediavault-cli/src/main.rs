@@ -253,6 +253,38 @@ enum Command {
         verbose: bool,
     },
 
+    /// Fetch subtitles from OpenSubtitles.com for a movie or show.
+    ///
+    /// For movies, searches and downloads subtitles for the video file.
+    /// For shows, fetches subtitles for all episodes that don't already have any.
+    /// Use --episode to target a specific episode.
+    ///
+    /// Requires an OpenSubtitles API key in config.toml.
+    ///
+    /// Examples:
+    ///   mediavault-cli fetch-subs matrix                  Interactive subtitle pick
+    ///   mediavault-cli fetch-subs matrix --auto            Download best match
+    ///   mediavault-cli fetch-subs matrix --lang en         English only
+    ///   mediavault-cli fetch-subs frie --episode s01e04    Specific episode
+    ///   mediavault-cli fetch-subs frie --list              List available subs
+    #[command(name = "fetch-subs", visible_alias = "fs")]
+    FetchSubs {
+        /// Partial title to match
+        title: String,
+        /// Specific episode, e.g. s01e04
+        #[arg(long, short)]
+        episode: Option<String>,
+        /// Language filter (ISO 639-1, e.g. "en", "en,de")
+        #[arg(long, short, default_value = "")]
+        lang: String,
+        /// Only list available subtitles, don't download
+        #[arg(long)]
+        list: bool,
+        /// Auto-select the best match (no interactive prompt)
+        #[arg(long)]
+        auto: bool,
+    },
+
     /// Show embedded subtitle tracks for an entry.
     ///
     /// For movies, lists all subtitle tracks in the video file.
@@ -343,6 +375,20 @@ fn main() {
             verbose,
         } => commands::is_watched::run(&entries, &title, episode.as_deref(), verbose),
         Command::Note { title, show } => commands::note::run(&entries, &title, show),
+        Command::FetchSubs {
+            title,
+            episode,
+            lang,
+            list,
+            auto,
+        } => commands::fetch_subs::run(
+            &entries,
+            &title,
+            episode.as_deref(),
+            &lang,
+            list,
+            auto,
+        ),
         Command::Subs { title, json } => commands::subs::run(&entries, &title, json),
     };
 

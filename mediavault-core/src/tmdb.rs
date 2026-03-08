@@ -32,6 +32,9 @@ pub struct AppConfig {
     /// TMDB v3 API key. Leave empty to disable poster fetching.
     #[serde(default)]
     pub tmdb_api_key: String,
+    /// OpenSubtitles.com API key. Leave empty to disable subtitle fetching.
+    #[serde(default)]
+    pub opensubtitles_api_key: String,
     /// Whether to fetch and display poster images.
     #[serde(default = "default_true")]
     pub show_posters: bool,
@@ -52,6 +55,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             tmdb_api_key: String::new(),
+            opensubtitles_api_key: String::new(),
             show_posters: true,
             auto_mark_watched: true,
             library_path: String::new(),
@@ -76,7 +80,8 @@ pub fn save_config(cfg: &AppConfig) -> std::io::Result<()> {
     let raw = toml::to_string_pretty(cfg).map_err(std::io::Error::other)?;
     let content = format!(
         "# MediaVault configuration\n\
-         # Get a free TMDB API key at https://www.themoviedb.org/settings/api\n\n\
+         # Get a free TMDB API key at https://www.themoviedb.org/settings/api\n\
+         # Get a free OpenSubtitles API key at https://www.opensubtitles.com/consumers\n\n\
          {raw}"
     );
     fs::write(path, content)

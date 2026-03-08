@@ -111,6 +111,7 @@ pub enum Action {
     Play,          // p
     ToggleWatched, // space (episode list) or d (detail)
     MarkAllWatched,
+    FetchSubs,  // F
     Notes,      // n
     SearchMode, // /
     Char(char),
@@ -378,6 +379,7 @@ impl App {
             Action::Select => self.play_selected(),
             Action::ToggleWatched => self.toggle_watched(),
             Action::MarkAllWatched => self.mark_all_watched(),
+            Action::FetchSubs => self.fetch_subtitles(),
             Action::Notes => self.open_notes(),
             _ => {}
         }
@@ -569,6 +571,160 @@ impl App {
             self.set_status(StatusMsg::ok(format!(
                 "✓ All {count} episodes marked as watched"
             )));
+        }
+    }
+
+    // ── Fetch subtitles ────────────────────────────────────────────────────────
+
+    pub fn fetch_subtitles(&mut self) {
+        let config = mediavault_core::tmdb::load_config();
+        if config.opensubtitles_api_key.is_empty() {
+            self.set_status(StatusMsg::err(
+                "OpenSubtitles API key not set — configure in config.toml",
+            ));
+            return;
+        }
+        let api_key = config.opensubtitles_api_key.clone();
+
+        let Some(idx) = self.selected_entry_index() else {
+            return;
+        };
+
+        match &self.entries[idx] {
+            MediaEntry::Movie(m) => {
+                let meta = m.metadata.clone();
+                let title = if !meta.clean_title.is_empty() {
+                    meta.clean_title.clone()
+                } else {
+                    m.title.clone()
+                };
+                let video_path = m.video_path.clone();
+
+                self.set_status(StatusMsg::ok("Searching for subtitles..."));
+
+                match mediavault_core::opensubtitles::search_subtitles(
+                    &api_key,
+                    &video_path,
+                    &title,
+                    meta.year,
+                    None,
+                    None,
+                    "",
+                ) {
+                    Ok(results) if results.is_empty() => {
+                        self.set_status(StatusMsg::err("No subtitles found"));
+                    }
+                    Ok(results) => {
+                        let best = &results[0];
+                        match mediavault_core::opensubtitles::download_subtitle(
+                            &api_key,
+                            best.file_id,
+                            &video_path,
+                            &best.language,
+                        ) {
+                            Ok(path) => {
+                                let fname = path
+                                    .file_name()
+                                    .unwrap_or_default()
+                                    .to_string_lossy()
+                                    .to_string();
+                                // Refresh external subs for this movie
+                                if let MediaEntry::Movie(m) = &mut self.entries[idx] {
+                                    m.external_subs =
+                                        mediavault_core::find_external_subtitles(&m.video_path);
+                                }
+                                self.set_status(StatusMsg::ok(format!("Downloaded: {fname}")));
+                            }
+                            Err(e) => {
+                                self.set_status(StatusMsg::err(format!("Download failed: {e}")));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        self.set_status(StatusMsg::err(format!("Search failed: {e}")));
+                    }
+                }
+            }
+            MediaEntry::Show(s) => {
+                let meta = s.metadata.clone();
+                let title = if !meta.clean_title.is_empty() {
+                    meta.clean_title.clone()
+                } else {
+                    s.title.clone()
+                };
+                // Fetch for the selected episode
+                let eps: Vec<&mediavault_core::models::Episode> = s.all_episodes().collect();
+                let Some(ep) = eps.get(self.detail_ep_selected) else {
+                    return;
+                };
+                let video_path = ep.video_path.clone();
+                let season = if ep.season_num > 0 {
+                    Some(ep.season_num)
+                } else {
+                    None
+                };
+                let episode = if ep.episode_num > 0 {
+                    Some(ep.episode_num)
+                } else {
+                    None
+                };
+                let ep_label = ep.display_label();
+
+                self.set_status(StatusMsg::ok(format!("Searching subs for {ep_label}...")));
+
+                match mediavault_core::opensubtitles::search_subtitles(
+                    &api_key,
+                    &video_path,
+                    &title,
+                    meta.year,
+                    season,
+                    episode,
+                    "",
+                ) {
+                    Ok(results) if results.is_empty() => {
+                        self.set_status(StatusMsg::err(format!(
+                            "No subtitles found for {ep_label}"
+                        )));
+                    }
+                    Ok(results) => {
+                        let best = &results[0];
+                        match mediavault_core::opensubtitles::download_subtitle(
+                            &api_key,
+                            best.file_id,
+                            &video_path,
+                            &best.language,
+                        ) {
+                            Ok(path) => {
+                                let fname = path
+                                    .file_name()
+                                    .unwrap_or_default()
+                                    .to_string_lossy()
+                                    .to_string();
+                                // Refresh external subs for this episode
+                                if let MediaEntry::Show(s) = &mut self.entries[idx] {
+                                    for season in &mut s.seasons {
+                                        for ep in &mut season.episodes {
+                                            if ep.video_path == video_path {
+                                                ep.external_subs =
+                                                    mediavault_core::find_external_subtitles(
+                                                        &ep.video_path,
+                                                    );
+                                            }
+                                        }
+                                    }
+                                }
+                                self.set_status(StatusMsg::ok(format!("Downloaded: {fname}")));
+                            }
+                            Err(e) => {
+                                self.set_status(StatusMsg::err(format!("Download failed: {e}")));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        self.set_status(StatusMsg::err(format!("Search failed: {e}")));
+                    }
+                }
+            }
         }
     }
 

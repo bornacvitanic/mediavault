@@ -46,6 +46,7 @@ pub fn map_key(key: KeyEvent, app: &App) -> Action {
             KeyCode::Char(' ') => Action::ToggleWatched,
             KeyCode::Char('d') => Action::ToggleWatched,
             KeyCode::Char('a') => Action::MarkAllWatched,
+            KeyCode::Char('F') => Action::FetchSubs,
             KeyCode::Char('n') => Action::Notes,
             _ => Action::Noop,
         },
