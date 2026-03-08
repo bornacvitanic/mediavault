@@ -1,7 +1,13 @@
 [package]
 name = "media_cli"
 version = "0.1.0"
-edition = "2021"
+description = "CLI frontend for MediaVault — query and manage your media library from the terminal"
+authors.workspace = true
+license-file.workspace = true
+repository.workspace = true
+edition.workspace = true
+keywords = ["media", "cli", "movies", "tracker", "terminal"]
+categories = ["command-line-utilities", "multimedia"]
 
 [[bin]]
 name = "mediavault-cli"

@@ -6,3 +6,9 @@ members = [
     "media_tui",
 ]
 resolver = "2"
+
+[workspace.package]
+authors = ["Borna Cvitanić borna.cvitanic@gmail.com"]
+license-file = "LICENSE.md"
+repository = "https://github.com/bornacvitanic/mediavault"
+edition = "2021"

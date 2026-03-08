@@ -1,7 +1,13 @@
 [package]
 name = "media_gui"
 version = "0.1.0"
-edition = "2021"
+description = "Desktop GUI for MediaVault — browse, watch-track, and manage your media library"
+authors.workspace = true
+license-file.workspace = true
+repository.workspace = true
+edition.workspace = true
+keywords = ["media", "gui", "egui", "movies", "tracker"]
+categories = ["multimedia", "gui"]
 
 [[bin]]
 name = "mediavault"

@@ -1,7 +1,13 @@
 [package]
 name = "media_tui"
 version = "0.1.0"
-edition = "2021"
+description = "TUI frontend for MediaVault — browse and manage your media library in the terminal"
+authors.workspace = true
+license-file.workspace = true
+repository.workspace = true
+edition.workspace = true
+keywords = ["media", "tui", "ratatui", "movies", "tracker"]
+categories = ["command-line-utilities", "multimedia"]
 
 [[bin]]
 name = "mediavault-tui"
