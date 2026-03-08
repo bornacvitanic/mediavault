@@ -2,17 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [unreleased]
+## [0.1.1] - 2026-03-08
 
 ### Bug Fixes
 
 - Apply cargo clippy fixes and cargo fmt
 
 clippy:
-- mediavault-core: use Error::other(), strip_prefix(), eq_ignore_ascii_case(), redundant closures
-- mediavault-tui: replace manual .min().max() with .clamp()
-- mediavault-cli: #[allow(too_many_arguments)] on run(), fix redundant closures and lifetimes
-- mediavault-gui: remove redundant let rebind, #[allow] for type_complexity and too_many_arguments,
+- media_core: use Error::other(), strip_prefix(), eq_ignore_ascii_case(), redundant closures
+- media_tui: replace manual .min().max() with .clamp()
+- media_cli: #[allow(too_many_arguments)] on run(), fix redundant closures and lifetimes
+- media_gui: remove redundant let rebind, #[allow] for type_complexity and too_many_arguments,
   change &mut Vec to &mut [_] in render_movie_detail / render_show_detail
 
 fmt: reformat all crates to rustfmt style
@@ -31,7 +31,7 @@ fmt: reformat all crates to rustfmt style
 
 Rename mv to mediavault-cli and mvt to mediavault-tui to avoid
 shadowing Unix mv command and to follow consistent naming. Fix CLI
-package name from mediavault to mediavault-cli to avoid Cargo collision
+package name from mediavault to media_cli to avoid Cargo collision
 with the GUI crate. Update all help text and hint messages.
 
 - Update sidecar.rs to fix comments path inconsistency
@@ -43,7 +43,20 @@ MediaEntry::comments_path() with load/save_comments_from/to_path.
 - Update main.rs to fix marking of movies as watched
 
 
+### Documentation
+
+- Add readme to all crates and bump to v0.1.1
+
+Point all four crates to the workspace root README.md for crates.io
+display. Bump version to 0.1.1 to publish the update.
+
+- Update README.md to add images
+
 ### Features
+
+- Add crates.io version specs and badge for publishing
+
+- Add generated changelog
 
 - Add git-cliff changelog configuration
 
@@ -55,11 +68,11 @@ MediaEntry::comments_path() with load/save_comments_from/to_path.
 
 - Add TestData
 
-- Add mediavault-tui
+- Add media_tui
 
-- Update mediavault-cli to add querying capability for automation
+- Update media_cli to add querying capability for automation
 
-- Add mediavault-cli
+- Add media_cli
 
 - Update tmdb.rs to add optional poster showing and auto mark as watched
 
@@ -70,16 +83,16 @@ MediaEntry::comments_path() with load/save_comments_from/to_path.
 
 ### Moves
 
-- Update mediavault-core to de-duplicate shared logic from frontends
+- Update media_core to de-duplicate shared logic from frontends
 
 Move open_in_player and resolve_library/looks_like_media_dir into
-mediavault-core so all three frontends (GUI, CLI, TUI) share a single
+media_core so all three frontends (GUI, CLI, TUI) share a single
 implementation instead of maintaining separate copies.
 
 
 ### Removals
 
-- Remove unused dead code in mediavault-gui
+- Remove unused dead code in media_gui
 
 - Remove base_dir field from PosterLoaded (textures are keyed by poster_path,
   base_dir was a leftover from an earlier design)
@@ -91,12 +104,24 @@ implementation instead of maintaining separate copies.
 - Simplify poster spawn loop to iterate by index since base_dirs is gone
 
 
+### Renames
+
+- Rename all crates from media_* to mediavault-* for crates.io publishing
+
+media_core was already taken on crates.io. Rename all four crates
+to mediavault-core, mediavault-gui, mediavault-cli, mediavault-tui
+for consistent naming. Update all source imports, README, CHANGELOG,
+and IDE config.
+
+
 ### Testing
 
-- Update mediavault-cli adn mediavault-core to add tests
+- Update media_cli adn media_core to add tests
 
 
 ### Updates
+
+- Update README to match project conventions
 
 - Update RustRover meta files
 
