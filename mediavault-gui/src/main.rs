@@ -1190,6 +1190,53 @@ fn render_movie_detail(
         });
     });
 
+    // ── Subtitles ──────────────────────────────────────────────────────────────
+    {
+        let total = movie.subtitles.len() + movie.external_subs.len();
+        let header = if total > 0 {
+            format!("Subtitles ({total})")
+        } else {
+            "Subtitles: none".to_string()
+        };
+        let header_text = egui::RichText::new(header)
+            .size(11.0)
+            .color(if total > 0 {
+                egui::Color32::from_rgb(180, 130, 220)
+            } else {
+                egui::Color32::from_gray(100)
+            });
+
+        if total > 0 {
+            let id = ui.make_persistent_id("movie_subs_collapsible");
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
+                .show_header(ui, |ui| {
+                    ui.label(header_text);
+                })
+                .body(|ui| {
+                    for sub in &movie.subtitles {
+                        let mut label = sub.display_label();
+                        if sub.default {
+                            label.push_str(" [default]");
+                        }
+                        ui.label(
+                            egui::RichText::new(format!("  · {label}"))
+                                .size(11.0)
+                                .color(egui::Color32::from_rgb(180, 130, 220)),
+                        );
+                    }
+                    for sub in &movie.external_subs {
+                        ui.label(
+                            egui::RichText::new(format!("  · {} [file]", sub.display_label()))
+                                .size(11.0)
+                                .color(egui::Color32::from_rgb(160, 180, 220)),
+                        );
+                    }
+                });
+        } else {
+            ui.label(header_text);
+        }
+    }
+
     ui.separator();
 
     // ── Actions ───────────────────────────────────────────────────────────────
@@ -1282,7 +1329,7 @@ fn render_show_detail(
         #[allow(clippy::type_complexity)]
         let seasons_data: Vec<(
             String,
-            Vec<(String, String, Option<String>, bool, bool, PathBuf)>,
+            Vec<(String, String, Option<String>, bool, bool, PathBuf, usize)>,
         )> = show
             .seasons
             .iter()
@@ -1298,6 +1345,7 @@ fn render_show_detail(
                             show.bookmarks.is_watched(&ep.relative_path),
                             show.bookmarks.next_up.as_deref() == Some(&ep.relative_path),
                             ep.video_path.clone(),
+                            ep.subtitles.len() + ep.external_subs.len(),
                         )
                     })
                     .collect();
@@ -1362,14 +1410,14 @@ fn render_show_detail(
             let next_label = seasons_data
                 .iter()
                 .flat_map(|(_, eps)| eps.iter())
-                .find(|(rp, _, _, _, _, _)| rp == np)
-                .map(|(_, label, _, _, _, _)| label.clone())
+                .find(|(rp, _, _, _, _, _, _)| rp == np)
+                .map(|(_, label, _, _, _, _, _)| label.clone())
                 .unwrap_or_else(|| "Next".into());
             if ui.button(format!("Continue  {next_label}")).clicked() {
-                if let Some((_, _, _, _, _, vp)) = seasons_data
+                if let Some((_, _, _, _, _, vp, _)) = seasons_data
                     .iter()
                     .flat_map(|(_, eps)| eps.iter())
-                    .find(|(rp, _, _, _, _, _)| rp == np)
+                    .find(|(rp, _, _, _, _, _, _)| rp == np)
                 {
                     mediavault_core::open_in_player(vp);
                     if auto_mark_watched {
@@ -1460,7 +1508,7 @@ fn render_show_detail(
                     );
                     ui.add_space(1.0);
                 }
-                for (rel_path, label, _ep_title, is_watched, is_next, video_path) in episodes {
+                for (rel_path, label, _ep_title, is_watched, is_next, video_path, sub_count) in episodes {
                     ui.horizontal(|ui| {
                         // Watched dot indicator instead of checkbox to avoid borrow issue
                         let dot_color = if *is_watched {
@@ -1503,6 +1551,14 @@ fn render_show_detail(
                         }
                         if resp.hovered() {
                             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+
+                        if *sub_count > 0 {
+                            ui.label(
+                                egui::RichText::new(format!("{}sub", sub_count))
+                                    .size(9.0)
+                                    .color(egui::Color32::from_rgb(180, 130, 220)),
+                            );
                         }
 
                         if *is_next {

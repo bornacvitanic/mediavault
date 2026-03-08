@@ -61,6 +61,16 @@ impl MediaEntry {
         }
     }
 
+    /// Whether this entry has any subtitle tracks (embedded or external).
+    pub fn has_subtitles(&self) -> bool {
+        match self {
+            MediaEntry::Movie(m) => !m.subtitles.is_empty() || !m.external_subs.is_empty(),
+            MediaEntry::Show(s) => s
+                .all_episodes()
+                .any(|ep| !ep.subtitles.is_empty() || !ep.external_subs.is_empty()),
+        }
+    }
+
     /// Path to the comments sidecar for this entry.
     /// Movies use `{video_stem}.media.comments.md` next to the video file so
     /// root-level movies sharing a base_dir don't overwrite each other.
@@ -100,6 +110,10 @@ pub struct Movie {
     pub poster_path: PathBuf,
     /// Metadata extracted from the raw filename at scan time.
     pub metadata: MediaMetadata,
+    /// Subtitle tracks embedded in the video container (MKV only).
+    pub subtitles: Vec<SubtitleTrack>,
+    /// External subtitle files found next to the video.
+    pub external_subs: Vec<ExternalSubtitle>,
 }
 
 /// Persisted, human-editable state written to `movie.watched.toml`.
@@ -183,6 +197,10 @@ pub struct Episode {
     /// Path relative to `Show::base_dir`, used as the stable bookmark key so
     /// that renaming the root library dir doesn't invalidate bookmarks.
     pub relative_path: String,
+    /// Subtitle tracks embedded in the video container (MKV only).
+    pub subtitles: Vec<SubtitleTrack>,
+    /// External subtitle files found next to the video.
+    pub external_subs: Vec<ExternalSubtitle>,
 }
 
 impl Episode {
@@ -238,6 +256,78 @@ impl ShowBookmarks {
 
     pub fn mark_unwatched(&mut self, relative_path: &str) {
         self.watched_episodes.retain(|p| p != relative_path);
+    }
+}
+
+// ── Subtitle tracks ──────────────────────────────────────────────────────────
+
+/// A subtitle track embedded in an MKV container.
+#[derive(Debug, Clone, Serialize)]
+pub struct SubtitleTrack {
+    /// Track number inside the container.
+    pub track_number: u64,
+    /// Language tag (e.g. "eng", "jpn"), if set.
+    pub language: Option<String>,
+    /// Codec identifier (e.g. "S_TEXT/UTF8" for SRT, "S_HDMV/PGS" for PGS).
+    pub codec_id: String,
+    /// Human-readable track name, if set (e.g. "English SDH", "Signs & Songs").
+    pub name: Option<String>,
+    /// Whether this is the default subtitle track.
+    pub default: bool,
+    /// Whether this track is flagged as forced.
+    pub forced: bool,
+}
+
+impl SubtitleTrack {
+    /// Short display label: language + name, or just codec if nothing else is known.
+    pub fn display_label(&self) -> String {
+        let lang = self
+            .language
+            .as_deref()
+            .unwrap_or("und")
+            .to_uppercase();
+        match &self.name {
+            Some(n) if !n.is_empty() => {
+                let mut label = format!("{lang} — {n}");
+                if self.forced {
+                    label.push_str(" [forced]");
+                }
+                label
+            }
+            _ => {
+                let codec_short = self
+                    .codec_id
+                    .strip_prefix("S_TEXT/")
+                    .or_else(|| self.codec_id.strip_prefix("S_HDMV/"))
+                    .or_else(|| self.codec_id.strip_prefix("S_"))
+                    .unwrap_or(&self.codec_id);
+                let mut label = format!("{lang} ({codec_short})");
+                if self.forced {
+                    label.push_str(" [forced]");
+                }
+                label
+            }
+        }
+    }
+}
+
+/// An external subtitle file (e.g. `.srt`, `.sub`, `.ass`) found next to a video.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExternalSubtitle {
+    /// Filename of the subtitle file (e.g. "movie.en.srt").
+    pub filename: String,
+    /// Language code extracted from the filename, if present (e.g. "en", "jpn").
+    pub language: Option<String>,
+    /// File extension (e.g. "srt", "ass", "sub").
+    pub format: String,
+}
+
+impl ExternalSubtitle {
+    pub fn display_label(&self) -> String {
+        match &self.language {
+            Some(lang) => format!("{} ({})", lang.to_uppercase(), self.format),
+            None => self.format.to_uppercase(),
+        }
     }
 }
 

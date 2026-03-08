@@ -104,6 +104,23 @@ fn draw_movie(f: &mut Frame, _app: &App, entry: &MediaEntry, area: Rect) {
         lines.push(Line::from(tag_spans));
     }
 
+    // Subtitle info
+    let total_subs = m.subtitles.len() + m.external_subs.len();
+    if total_subs > 0 {
+        let mut parts = Vec::new();
+        if !m.subtitles.is_empty() {
+            parts.push(format!("{} embedded", m.subtitles.len()));
+        }
+        if !m.external_subs.is_empty() {
+            parts.push(format!("{} external", m.external_subs.len()));
+        }
+        let sub_spans: Vec<Span> = vec![
+            Span::styled(" Subs: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(parts.join(", "), Style::default().fg(Color::Magenta)),
+        ];
+        lines.push(Line::from(sub_spans));
+    }
+
     lines.push(Line::raw(""));
 
     let status = if m.state.watched {
@@ -274,6 +291,15 @@ fn draw_show(f: &mut Frame, app: &App, entry: &MediaEntry, area: Rect) {
             } else {
                 Span::raw("")
             };
+            let sub_count = ep.subtitles.len() + ep.external_subs.len();
+            let sub_tag = if sub_count > 0 {
+                Span::styled(
+                    format!("  [{}sub]", sub_count),
+                    Style::default().fg(Color::Magenta),
+                )
+            } else {
+                Span::raw("")
+            };
 
             let label_style = if is_sel {
                 Style::default()
@@ -290,6 +316,7 @@ fn draw_show(f: &mut Frame, app: &App, entry: &MediaEntry, area: Rect) {
                 Span::styled(dot, dot_style),
                 Span::raw("  "),
                 Span::styled(label, label_style),
+                sub_tag,
                 next_tag,
             ]);
             items.push(ListItem::new(line));

@@ -10,6 +10,7 @@ use natord::compare as natural_compare;
 use crate::{
     models::{Episode, MediaEntry, Movie, Season, Show, VIDEO_EXTENSIONS},
     sidecar::{load_movie_state, load_show_bookmarks},
+    subtitles::{extract_subtitle_tracks, find_external_subtitles},
     tmdb::{extract_metadata, extract_metadata_with_episodes, parse_episode},
 };
 
@@ -187,6 +188,8 @@ fn movie_from_single_file(base_dir: &Path, video_path: &Path) -> Option<Movie> {
         "{}.media.poster.jpg",
         video_path.file_stem().unwrap_or_default().to_string_lossy()
     ));
+    let subtitles = extract_subtitle_tracks(video_path);
+    let external_subs = find_external_subtitles(video_path);
     Some(Movie {
         title,
         base_dir: base_dir.to_path_buf(),
@@ -195,6 +198,8 @@ fn movie_from_single_file(base_dir: &Path, video_path: &Path) -> Option<Movie> {
         state,
         poster_path,
         metadata,
+        subtitles,
+        external_subs,
     })
 }
 
@@ -330,6 +335,8 @@ fn make_episode(show_base: &Path, video_path: &Path) -> Episode {
         .unwrap_or(video_path)
         .to_string_lossy()
         .replace('\\', "/");
+    let subtitles = extract_subtitle_tracks(video_path);
+    let external_subs = find_external_subtitles(video_path);
     Episode {
         title: raw_stem,
         season_num: parsed.season_num,
@@ -338,6 +345,8 @@ fn make_episode(show_base: &Path, video_path: &Path) -> Episode {
         video_mtime: mtime(video_path),
         video_path: video_path.to_path_buf(),
         relative_path,
+        subtitles,
+        external_subs,
     }
 }
 

@@ -58,9 +58,19 @@ fn get_entry_field(entry: &MediaEntry, field: &str) -> Result<(), String> {
                 }
                 None => Err("no year metadata for this entry".into()),
             },
+            "subs" => {
+                if m.subtitles.is_empty() {
+                    println!("none");
+                } else {
+                    for sub in &m.subtitles {
+                        println!("{}", sub.display_label());
+                    }
+                }
+                Ok(())
+            }
             other => Err(format!(
                 "unknown field \"{other}\" for movie\n  \
-                 valid fields: watched, path, title, year"
+                 valid fields: watched, path, title, year, subs"
             )),
         },
 
@@ -115,9 +125,14 @@ fn get_entry_field(entry: &MediaEntry, field: &str) -> Result<(), String> {
                     println!("{t}");
                     Ok(())
                 }
+                "subs" => {
+                    let has_any = s.all_episodes().any(|ep| !ep.subtitles.is_empty());
+                    println!("{has_any}");
+                    Ok(())
+                }
                 other => Err(format!(
                     "unknown field \"{other}\" for show\n  \
-                     valid fields: next, next-label, watched, progress, fraction, path, title\n  \
+                     valid fields: next, next-label, watched, progress, fraction, path, title, subs\n  \
                      episode path: mediavault-cli get <title> <s01e04> path"
                 )),
             }

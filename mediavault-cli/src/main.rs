@@ -252,6 +252,26 @@ enum Command {
         #[arg(long, short)]
         verbose: bool,
     },
+
+    /// Show embedded subtitle tracks for an entry.
+    ///
+    /// For movies, lists all subtitle tracks in the video file.
+    /// For shows, lists subtitle tracks per episode with a summary.
+    ///
+    /// Only MKV files are supported — other containers will show no subtitles.
+    ///
+    /// Examples:
+    ///   mediavault-cli subs matrix           Show subtitle tracks for The Matrix
+    ///   mediavault-cli subs frie             Show subtitles per episode for Frieren
+    ///   mediavault-cli subs matrix --json    Machine-readable output
+    #[command(visible_alias = "sub")]
+    Subs {
+        /// Partial title to match
+        title: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -323,6 +343,7 @@ fn main() {
             verbose,
         } => commands::is_watched::run(&entries, &title, episode.as_deref(), verbose),
         Command::Note { title, show } => commands::note::run(&entries, &title, show),
+        Command::Subs { title, json } => commands::subs::run(&entries, &title, json),
     };
 
     if let Err(e) = result {

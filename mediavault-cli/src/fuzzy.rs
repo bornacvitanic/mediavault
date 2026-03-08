@@ -122,6 +122,8 @@ mod tests {
                 clean_title: clean_title.to_string(),
                 ..Default::default()
             },
+            subtitles: Vec::new(),
+            external_subs: Vec::new(),
         })
     }
 

@@ -5,4 +5,5 @@ pub mod ls;
 pub mod next;
 pub mod note;
 pub mod status;
+pub mod subs;
 pub mod undo;

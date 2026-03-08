@@ -22,3 +22,5 @@ serde_json = "1"
 natord = "1"
 urlencoding = "2"
 dirs-next = "2"
+# MKV container metadata reading for subtitle track detection
+matroska = "0.30"
