@@ -155,7 +155,7 @@ fn search_by_title(
 fn do_search(api_key: &str, url: &str) -> Result<Vec<SubtitleResult>, String> {
     let resp = ureq::get(url)
         .set("Api-Key", api_key)
-        .set("User-Agent", "mediavault v0.1.3")
+        .set("User-Agent", "mediavault v0.1.4")
         .call()
         .map_err(|e| format!("API request failed: {e}"))?;
 
@@ -200,7 +200,7 @@ pub fn download_subtitle(
     // Request download link
     let resp = ureq::post(&format!("{API_BASE}/download"))
         .set("Api-Key", api_key)
-        .set("User-Agent", "mediavault v0.1.3")
+        .set("User-Agent", "mediavault v0.1.4")
         .set("Content-Type", "application/json")
         .send_json(serde_json::json!({ "file_id": file_id }))
         .map_err(|e| format!("download request failed: {e}"))?;

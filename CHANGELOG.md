@@ -2,22 +2,74 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.3] - 2026-03-08
+## [unreleased]
 
 ### Features
 
-- Improve movie vs show classification with extras folder detection
-  - Skip known extras folders (Featurettes/, Extras/, Deleted Scenes/, etc.) when classifying
-  - Use episode-pattern detection (S01E01) as tiebreaker for multi-video folders
-  - Pick largest file as main feature when no episode patterns are found
-- Add Linux support with CI testing and release binaries
-- Add subtitle detection and fetching to roadmap
+- Add OpenSubtitles integration for subtitle fetching
 
-### Changes
+Search and download subtitles from OpenSubtitles.com across all interfaces.
+Uses file hash matching with title+year fallback for accurate results.
 
-- CI now tests on both Windows and Linux
-- Release workflow produces both Windows (.zip) and Linux (.tar.gz) binaries
-- Update README to reflect Linux support and new classification rules
+- core: new opensubtitles module with hash computation, search, and download;
+  add opensubtitles_api_key to AppConfig
+- cli: new fetch-subs command with --lang, --list, --auto, --episode flags;
+  interactive numbered pick when no flags given
+- tui: F key fetches subs for selected movie or episode, auto-downloads best
+  match with status feedback
+- gui: Fetch Subtitles button in movie and show detail panels with background
+  thread downloading; OpenSubtitles API key field in Settings; clear status
+  on entry switch
+
+- Add subtitle detection for embedded MKV tracks and external files
+
+Detect embedded subtitle tracks in MKV/WebM containers using the
+matroska
+crate and scan for external subtitle files (.srt, .ass, .ssa, .sub,
+.idx,
+.vtt) alongside video files. Expose subtitle data across all interfaces:
+
+- core: new subtitles module with extract_subtitle_tracks and
+  find_external_subtitles; SubtitleTrack and ExternalSubtitle models
+- cli: new `subs` command with per-title and JSON output; subtitle
+  info in `get` output
+- tui: subtitle count per movie and per episode in detail view
+- gui: collapsible subtitle section for movies (collapsed by default),
+  per-episode subtitle count badge for shows
+
+
+## [0.1.3] - 2026-03-08
+
+### Documentation
+
+- Bump all crates to v0.1.3, add Linux support and update roadmap
+
+- Add Linux CI testing alongside Windows in rust.yml
+- Add Linux release binaries (tar.gz) alongside Windows (zip) in release.yml
+- Update README: remove cross-platform from roadmap (Linux works),
+  add subtitle detection/fetching to roadmap, document extras detection,
+  show Linux config path
+- Bump all four crates from 0.1.2 to 0.1.3
+- Update changelog for v0.1.3
+
+
+### Updates
+
+- Improve movie vs show classification with extras detection
+
+Movies bundled with featurettes/bonus content were incorrectly
+classified as shows because the folder contained multiple video files.
+
+Now the scanner:
+- Skips known extras folders (Featurettes/, Extras/, Deleted Scenes/,
+  etc.) when counting videos for classification
+- Falls back to episode-pattern detection (S01E01) when multiple
+  non-extras videos exist — no patterns means movie, not show
+- Picks the largest file as the main feature when extras aren't in
+  a subfolder
+- Filters extras folders from season building so they don't appear
+  as phantom seasons
+
 
 ## [0.1.2] - 2026-03-08
 

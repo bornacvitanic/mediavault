@@ -19,12 +19,14 @@ A lightweight watch tracker for your local movie and TV show files. Point it at 
 - **Torrent filename parsing** — handles scene naming, anime fansubs, unicode lookalikes, and bracket-heavy release tags
 - **Fuzzy title matching** — 4-tier scoring (exact, starts-with, word-starts, contains) for CLI queries
 - **Watch tracking** — per-movie watched state with timestamped history, per-episode bookmarks with auto-advancing next-up
+- **Subtitle detection** — reads embedded MKV subtitle tracks and finds external subtitle files (.srt, .ass, etc.)
+- **Subtitle fetching** — search and download subtitles from OpenSubtitles.com with file-hash matching
 - **Comments** — free-form Markdown notes per entry, editable in-app or in any text editor
 
 ## Roadmap
 
-- [ ] Subtitle detection and display in metadata tags
-- [ ] Subtitle fetching (OpenSubtitles integration)
+- [x] Subtitle detection and display in metadata tags
+- [x] Subtitle fetching (OpenSubtitles integration)
 - [ ] Bulk operations in CLI
 - [ ] Search and filtering in GUI/TUI
 - [ ] macOS support
@@ -36,6 +38,7 @@ A lightweight watch tracker for your local movie and TV show files. Point it at 
 - Rust toolchain (1.70+)
 - Windows or Linux (macOS untested but may work)
 - Optional: [TMDB API key](https://www.themoviedb.org/settings/api) for poster fetching
+- Optional: [OpenSubtitles API key](https://www.opensubtitles.com/consumers) for subtitle fetching
 
 ### Installation
 
@@ -77,8 +80,12 @@ mediavault-cli done "tron legacy"
 # Get next episode for a show
 mediavault-cli next "dr stone"
 
-# Open entry status
-mediavault-cli status "frieren"
+# Show subtitle info
+mediavault-cli subs "tron legacy"
+
+# Fetch subtitles from OpenSubtitles
+mediavault-cli fetch-subs "tron legacy" --auto
+mediavault-cli fetch-subs "frieren" --episode s01e04 --lang en
 ```
 
 ### TUI
@@ -128,15 +135,17 @@ Free-form markdown. Edited directly in the app or in any text editor.
 ### `{video_stem}.media.poster.jpg`
 Cached poster downloaded from TMDB. Delete this file to force a re-fetch.
 
-## TMDB API Key
+## API Keys
 
-Get a free key at https://www.themoviedb.org/settings/api
-
-The key is saved to:
+Both keys are saved to the shared config file:
 ```
 Windows: %APPDATA%\mediavault\config.toml
 Linux:   ~/.config/mediavault/config.toml
 ```
+
+**TMDB** — poster fetching. Get a free key at https://www.themoviedb.org/settings/api
+
+**OpenSubtitles** — subtitle fetching. Get a free key at https://www.opensubtitles.com/consumers
 
 ## Project Structure
 
@@ -148,9 +157,11 @@ mediavault/
 │       ├── models.rs  # Domain types
 │       ├── scanner.rs # Directory scanning
 │       ├── sidecar.rs # Sidecar file read/write
-│       ├── tmdb.rs    # TMDB integration and filename parsing
-│       ├── player.rs  # System media player launch
-│       └── library.rs # Library path resolution
+│       ├── tmdb.rs          # TMDB integration and filename parsing
+│       ├── subtitles.rs     # Embedded MKV and external subtitle detection
+│       ├── opensubtitles.rs # OpenSubtitles.com API client
+│       ├── player.rs        # System media player launch
+│       └── library.rs       # Library path resolution
 ├── mediavault-gui/    # egui desktop frontend
 ├── mediavault-cli/    # clap CLI frontend
 └── mediavault-tui/    # ratatui TUI frontend
@@ -170,6 +181,7 @@ This project is licensed under the MIT License — see the [LICENSE.md](LICENSE.
 - [clap](https://docs.rs/clap) — command-line argument parser
 - [ratatui](https://docs.rs/ratatui) — terminal user interface framework
 - [TMDB](https://www.themoviedb.org/) — movie and TV show metadata
+- [matroska](https://docs.rs/matroska) — MKV container parsing for subtitle track extraction
 - [serde](https://docs.rs/serde) / [toml](https://docs.rs/toml) — serialization
 - [chrono](https://docs.rs/chrono) — date/time handling
 
