@@ -1,5 +1,5 @@
 use crate::fuzzy::{match_entry, parse_ep_spec, print_ambiguous, print_not_found, MatchResult};
-use media_core::MediaEntry;
+use mediavault_core::MediaEntry;
 
 /// Query a single field from an entry. Always prints a bare value — no colour,
 /// no decoration — so output can be used directly in scripts and status bars.
@@ -161,7 +161,7 @@ fn get_episode_field(
     }
 }
 
-fn next_episode(s: &media_core::models::Show) -> Option<&media_core::models::Episode> {
+fn next_episode(s: &mediavault_core::models::Show) -> Option<&mediavault_core::models::Episode> {
     let next_rel = s.bookmarks.next_up.as_ref();
     match next_rel {
         Some(np) => s.all_episodes().find(|ep| &ep.relative_path == np),

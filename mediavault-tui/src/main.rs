@@ -24,10 +24,10 @@ fn main() -> anyhow::Result<()> {
         .position(|a| a == "--library" || a == "-l")
         .and_then(|pos| args.get(pos + 1))
         .map(PathBuf::from);
-    let library = media_core::resolve_library(explicit).map_err(|e| {
+    let library = mediavault_core::resolve_library(explicit).map_err(|e| {
         anyhow::anyhow!("{e}\nrun mediavault-tui from your media folder, or pass --library <path>")
     })?;
-    let entries = media_core::scan_library(&library);
+    let entries = mediavault_core::scan_library(&library);
 
     // ── Terminal setup ────────────────────────────────────────────────────────
     enable_raw_mode()?;

@@ -2372,17 +2372,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "media_cli"
+name = "mediavault-cli"
 version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
- "media_core",
+ "mediavault-core",
  "serde_json",
 ]
 
 [[package]]
-name = "media_core"
+name = "mediavault-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
@@ -2397,7 +2397,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "media_gui"
+name = "mediavault-gui"
 version = "0.1.0"
 dependencies = [
  "chrono",
@@ -2405,19 +2405,19 @@ dependencies = [
  "eframe",
  "egui",
  "image 0.25.9",
- "media_core",
+ "mediavault-core",
  "rfd",
  "serde",
 ]
 
 [[package]]
-name = "media_tui"
+name = "mediavault-tui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
  "crossterm",
- "media_core",
+ "mediavault-core",
  "ratatui",
 ]
 

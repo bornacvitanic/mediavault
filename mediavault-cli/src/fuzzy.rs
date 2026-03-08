@@ -1,4 +1,4 @@
-use media_core::MediaEntry;
+use mediavault_core::MediaEntry;
 
 pub enum MatchResult<'a> {
     One(&'a MediaEntry),
@@ -107,7 +107,7 @@ pub fn print_not_found(query: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use media_core::{MediaEntry, MediaMetadata, Movie, MovieState};
+    use mediavault_core::{MediaEntry, MediaMetadata, Movie, MovieState};
     use std::path::PathBuf;
 
     fn make_movie(title: &str, clean_title: &str) -> MediaEntry {

@@ -1,5 +1,5 @@
 use crate::app::{display_title, App};
-use media_core::MediaEntry;
+use mediavault_core::MediaEntry;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},

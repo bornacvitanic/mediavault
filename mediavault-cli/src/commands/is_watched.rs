@@ -1,5 +1,5 @@
 use crate::fuzzy::{match_entry, parse_ep_spec, print_ambiguous, print_not_found, MatchResult};
-use media_core::MediaEntry;
+use mediavault_core::MediaEntry;
 
 /// Check watch state via exit code. Exits 0 if watched, 1 if not.
 /// Prints nothing unless --verbose is set, so it composes cleanly in conditionals.

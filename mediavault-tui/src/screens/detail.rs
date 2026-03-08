@@ -1,5 +1,5 @@
 use crate::app::{display_title, App};
-use media_core::MediaEntry;
+use mediavault_core::MediaEntry;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -233,7 +233,7 @@ fn draw_show(f: &mut Frame, app: &App, entry: &MediaEntry, area: Rect) {
     f.render_widget(Paragraph::new(header_lines), chunks[0]);
 
     // ── Episode list ──────────────────────────────────────────────────────────
-    let all_eps: Vec<&media_core::models::Episode> = s.all_episodes().collect();
+    let all_eps: Vec<&mediavault_core::models::Episode> = s.all_episodes().collect();
     let ep_count = all_eps.len();
     let visible_rows = chunks[1].height as usize;
     let scroll = compute_scroll(app.detail_ep_selected, visible_rows, ep_count);

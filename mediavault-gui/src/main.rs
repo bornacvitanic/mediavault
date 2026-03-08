@@ -10,7 +10,7 @@ use std::{
 use chrono::Utc;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
-use media_core::{
+use mediavault_core::{
     models::{Comments, MediaEntry, WatchEvent},
     scan_library,
     sidecar::{
@@ -163,7 +163,7 @@ impl App {
         }
         let entries = library_root
             .as_deref()
-            .map(media_core::scan_library)
+            .map(mediavault_core::scan_library)
             .unwrap_or_default();
         Self {
             library_root,
@@ -639,7 +639,7 @@ impl eframe::App for App {
                             match entry {
                                 MediaEntry::Movie(m) => {
                                     let vp = m.video_path.clone();
-                                    media_core::open_in_player(&vp);
+                                    mediavault_core::open_in_player(&vp);
                                     if auto_mark && !m.state.watched {
                                         if let MediaEntry::Movie(m2) = &mut self.entries[entry_idx]
                                         {
@@ -666,7 +666,7 @@ impl eframe::App for App {
                                             .map(|ep| ep.video_path.clone());
                                         let bd = s.base_dir.clone();
                                         if let Some(vp) = ep_vp {
-                                            media_core::open_in_player(&vp);
+                                            mediavault_core::open_in_player(&vp);
                                             if auto_mark {
                                                 if let MediaEntry::Show(s2) =
                                                     &mut self.entries[entry_idx]
@@ -1195,7 +1195,7 @@ fn render_movie_detail(
     // ── Actions ───────────────────────────────────────────────────────────────
     ui.horizontal(|ui| {
         if ui.button("Open in Player").clicked() {
-            media_core::open_in_player(&movie.video_path);
+            mediavault_core::open_in_player(&movie.video_path);
             if auto_mark_watched && !movie.state.watched {
                 movie.state.watched = true;
                 movie.state.watch_history.push(WatchEvent {
@@ -1371,7 +1371,7 @@ fn render_show_detail(
                     .flat_map(|(_, eps)| eps.iter())
                     .find(|(rp, _, _, _, _, _)| rp == np)
                 {
-                    media_core::open_in_player(vp);
+                    mediavault_core::open_in_player(vp);
                     if auto_mark_watched {
                         if let Some(show) = entries.iter_mut().find_map(|e| {
                             if let MediaEntry::Show(s) = e {
@@ -1545,7 +1545,7 @@ fn render_show_detail(
         }
     }
     if let Some((ref vp, ref ep_rel)) = open_path {
-        media_core::open_in_player(vp);
+        mediavault_core::open_in_player(vp);
         if auto_mark_watched {
             if let Some(show) = entries.iter_mut().find_map(|e| {
                 if let MediaEntry::Show(s) = e {

@@ -1,7 +1,7 @@
 use crate::fuzzy::{match_entry, print_ambiguous, print_not_found, MatchResult};
 use crate::output::Style;
-use media_core::sidecar::load_comments_from_path;
-use media_core::MediaEntry;
+use mediavault_core::sidecar::load_comments_from_path;
+use mediavault_core::MediaEntry;
 use std::path::Path;
 
 pub fn run(entries: &[MediaEntry], query: &str, show_only: bool) -> Result<(), String> {

@@ -1,9 +1,9 @@
 [workspace]
 members = [
-    "media_core",
-    "media_gui",
-    "media_cli",
-    "media_tui",
+    "mediavault-core",
+    "mediavault-gui",
+    "mediavault-cli",
+    "mediavault-tui",
 ]
 resolver = "2"
 

@@ -1,6 +1,6 @@
 use crate::fuzzy::{match_entry, print_ambiguous, print_not_found, MatchResult};
 use crate::output::{entry_summary_line, episode_line, progress_bar, Style};
-use media_core::MediaEntry;
+use mediavault_core::MediaEntry;
 
 #[allow(clippy::too_many_arguments)]
 pub fn run(

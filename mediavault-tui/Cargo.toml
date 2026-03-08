@@ -1,5 +1,5 @@
 [package]
-name = "media_tui"
+name = "mediavault-tui"
 version = "0.1.0"
 description = "TUI frontend for MediaVault — browse and manage your media library in the terminal"
 authors.workspace = true
@@ -14,7 +14,7 @@ name = "mediavault-tui"
 path = "src/main.rs"
 
 [dependencies]
-media_core = { path = "../media_core", version = "0.1.0" }
+mediavault-core = { path = "../mediavault-core", version = "0.1.0" }
 ratatui = "0.29"
 crossterm = "0.28"
 chrono = { version = "0.4", features = ["serde"] }

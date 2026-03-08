@@ -1,8 +1,8 @@
 use crate::fuzzy::{match_entry, parse_ep_spec, print_ambiguous, print_not_found, MatchResult};
 use crate::output::{entry_display_title, Style};
 use chrono::Utc;
-use media_core::models::WatchEvent;
-use media_core::{save_movie_state, save_show_bookmarks, MediaEntry};
+use mediavault_core::models::WatchEvent;
+use mediavault_core::{save_movie_state, save_show_bookmarks, MediaEntry};
 
 pub fn run(
     entries: &[MediaEntry],

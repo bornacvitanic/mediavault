@@ -1,5 +1,5 @@
 [package]
-name = "media_gui"
+name = "mediavault-gui"
 version = "0.1.0"
 description = "Desktop GUI for MediaVault — browse, watch-track, and manage your media library"
 authors.workspace = true
@@ -14,7 +14,7 @@ name = "mediavault"
 path = "src/main.rs"
 
 [dependencies]
-media_core = { path = "../media_core", version = "0.1.0" }
+mediavault-core = { path = "../mediavault-core", version = "0.1.0" }
 eframe = { version = "0.27", features = ["default", "persistence"] }
 egui = "0.27"
 # Load poster images into egui textures

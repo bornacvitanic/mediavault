@@ -1,7 +1,7 @@
 [![Test](https://github.com/bornacvitanic/mediavault/actions/workflows/rust.yml/badge.svg)](https://github.com/bornacvitanic/mediavault/actions/workflows/rust.yml)
 [![dependency status](https://deps.rs/repo/github/bornacvitanic/mediavault/status.svg)](https://deps.rs/repo/github/bornacvitanic/mediavault)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Crates.io](https://img.shields.io/crates/v/media_core.svg)](https://crates.io/crates/media_core)
+[![Crates.io](https://img.shields.io/crates/v/mediavault-core.svg)](https://crates.io/crates/mediavault-core)
 [![Download](https://img.shields.io/badge/download-releases-blue.svg)](https://github.com/bornacvitanic/mediavault/releases)
 
 <img width="2559" height="1439" alt="GUI" src="https://github.com/user-attachments/assets/29580728-388e-4f88-9c1d-ca1adb0eee50" />
@@ -138,7 +138,7 @@ The key is saved to:
 
 ```
 mediavault/
-├── media_core/        # Shared library — scanning, sidecar I/O, TMDB, metadata parsing
+├── mediavault-core/   # Shared library — scanning, sidecar I/O, TMDB, metadata parsing
 │   └── src/
 │       ├── lib.rs
 │       ├── models.rs  # Domain types
@@ -147,9 +147,9 @@ mediavault/
 │       ├── tmdb.rs    # TMDB integration and filename parsing
 │       ├── player.rs  # System media player launch
 │       └── library.rs # Library path resolution
-├── media_gui/         # egui desktop frontend
-├── media_cli/         # clap CLI frontend
-└── media_tui/         # ratatui TUI frontend
+├── mediavault-gui/    # egui desktop frontend
+├── mediavault-cli/    # clap CLI frontend
+└── mediavault-tui/    # ratatui TUI frontend
 ```
 
 ## Contributing

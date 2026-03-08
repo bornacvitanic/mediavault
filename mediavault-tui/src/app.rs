@@ -1,6 +1,6 @@
 use chrono::Utc;
-use media_core::models::WatchEvent;
-use media_core::{save_movie_state, save_show_bookmarks, MediaEntry};
+use mediavault_core::models::WatchEvent;
+use mediavault_core::{save_movie_state, save_show_bookmarks, MediaEntry};
 use std::time::Instant;
 
 // ── Screens ───────────────────────────────────────────────────────────────────
@@ -416,7 +416,7 @@ impl App {
         match &self.entries[idx] {
             MediaEntry::Movie(m) => {
                 let vp = m.video_path.clone();
-                media_core::open_in_player(&vp);
+                mediavault_core::open_in_player(&vp);
                 // Auto-mark watched
                 if !m.state.watched {
                     if let MediaEntry::Movie(m2) = &mut self.entries[idx] {
@@ -438,7 +438,7 @@ impl App {
             MediaEntry::Show(s) => {
                 // Play focused episode (or next unwatched if on movie row)
                 let ep_rel = {
-                    let eps: Vec<&media_core::models::Episode> = s.all_episodes().collect();
+                    let eps: Vec<&mediavault_core::models::Episode> = s.all_episodes().collect();
                     if eps.is_empty() {
                         return;
                     }
@@ -463,7 +463,7 @@ impl App {
                     let Some(vp) = vp else {
                         return;
                     };
-                    media_core::open_in_player(&vp);
+                    mediavault_core::open_in_player(&vp);
 
                     let following = s2
                         .all_episodes()

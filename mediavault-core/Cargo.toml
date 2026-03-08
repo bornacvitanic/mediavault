@@ -1,5 +1,5 @@
 [package]
-name = "media_core"
+name = "mediavault-core"
 version = "0.1.0"
 description = "Core library for MediaVault — scanning, sidecar I/O, TMDB integration, and metadata parsing"
 authors.workspace = true

@@ -1,6 +1,6 @@
 use crate::fuzzy::{match_entry, parse_ep_spec, print_ambiguous, print_not_found, MatchResult};
 use crate::output::{entry_display_title, Style};
-use media_core::{save_movie_state, save_show_bookmarks, MediaEntry};
+use mediavault_core::{save_movie_state, save_show_bookmarks, MediaEntry};
 
 pub fn run(entries: &[MediaEntry], query: &str, episode: Option<&str>) -> Result<(), String> {
     let st = Style::new();

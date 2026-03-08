@@ -1,4 +1,4 @@
-use media_core::{models::Episode, MediaEntry};
+use mediavault_core::{models::Episode, MediaEntry};
 
 // ── Colours (ANSI, disabled when not a tty) ───────────────────────────────────
 
@@ -98,7 +98,7 @@ pub fn entry_display_title(entry: &MediaEntry) -> &str {
 /// Single-line entry summary for list views.
 pub fn entry_summary_line(entry: &MediaEntry, st: &Style) -> String {
     match entry {
-        media_core::MediaEntry::Movie(m) => {
+        mediavault_core::MediaEntry::Movie(m) => {
             let title = if !m.metadata.clean_title.is_empty() {
                 &m.metadata.clean_title
             } else {
@@ -116,7 +116,7 @@ pub fn entry_summary_line(entry: &MediaEntry, st: &Style) -> String {
             };
             format!("{}{:<2}  {}", st.bold(title), year, status)
         }
-        media_core::MediaEntry::Show(s) => {
+        mediavault_core::MediaEntry::Show(s) => {
             let title = if !s.metadata.clean_title.is_empty() {
                 &s.metadata.clean_title
             } else {

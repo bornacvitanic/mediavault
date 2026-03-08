@@ -1,5 +1,5 @@
 use crate::output::{entry_display_title, progress_bar, Style};
-use media_core::MediaEntry;
+use mediavault_core::MediaEntry;
 
 pub fn run(entries: &[MediaEntry], json: bool) -> Result<(), String> {
     if json {
@@ -107,7 +107,7 @@ pub fn run(entries: &[MediaEntry], json: bool) -> Result<(), String> {
 }
 
 /// Label for the next unwatched episode of a show.
-fn next_ep_label(s: &media_core::models::Show) -> String {
+fn next_ep_label(s: &mediavault_core::models::Show) -> String {
     let next_path = s.bookmarks.next_up.as_ref().or(None);
     let ep = match next_path {
         Some(np) => s.all_episodes().find(|ep| &ep.relative_path == np),

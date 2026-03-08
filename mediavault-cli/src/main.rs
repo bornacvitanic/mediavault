@@ -259,7 +259,7 @@ enum Command {
 fn main() {
     let cli = Cli::parse();
 
-    let library = match media_core::resolve_library(cli.library) {
+    let library = match mediavault_core::resolve_library(cli.library) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("error: {e}");
@@ -268,7 +268,7 @@ fn main() {
         }
     };
 
-    let entries = media_core::scan_library(&library);
+    let entries = mediavault_core::scan_library(&library);
 
     let result = match cli.command.unwrap_or(Command::Status { json: false }) {
         Command::Status { json } => commands::status::run(&entries, json),

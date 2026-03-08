@@ -8,6 +8,6 @@ pub fn open_or_print(path: &Path, path_only: bool) -> Result<(), String> {
         return Ok(());
     }
 
-    media_core::open_in_player(path);
+    mediavault_core::open_in_player(path);
     Ok(())
 }
