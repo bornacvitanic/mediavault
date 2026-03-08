@@ -19,9 +19,12 @@ use crate::{
 ///
 /// Detection rules:
 /// - A video file directly in `root`                           → Movie
-/// - A direct subfolder containing exactly **one** video file → Movie  
-/// - A direct subfolder containing **multiple** video files,
-///   or nested season subfolders each containing videos        → Show
+/// - A direct subfolder containing exactly **one** video file
+///   (ignoring known extras folders like Featurettes/)          → Movie
+/// - A direct subfolder with **multiple** non-extras video files
+///   where at least one has an episode pattern (S01E01)         → Show
+/// - A direct subfolder with **multiple** non-extras video files
+///   but **no** episode patterns → Movie (largest file is the feature)
 ///
 /// Entries are *not* sorted here; the GUI/CLI layer decides ordering.
 pub fn scan_library(root: &Path) -> Vec<MediaEntry> {
@@ -72,16 +75,89 @@ enum SubfolderKind {
     Empty,
 }
 
+/// Subfolder names that typically hold bonus content rather than episodes.
+/// Matched case-insensitively against directory names.
+const EXTRAS_FOLDER_NAMES: &[&str] = &[
+    "extras",
+    "extra",
+    "featurettes",
+    "featurette",
+    "behind the scenes",
+    "deleted scenes",
+    "bonus",
+    "bonus features",
+    "special features",
+    "specials",
+    "interviews",
+    "trailers",
+    "trailer",
+    "samples",
+    "sample",
+    "shorts",
+    "other",
+];
+
+fn is_extras_folder(dir_name: &str) -> bool {
+    let lower = dir_name.to_lowercase();
+    EXTRAS_FOLDER_NAMES.iter().any(|&name| lower == name)
+}
+
 /// Determine whether a direct child directory represents a movie or a show.
+///
+/// Classification rules:
+/// 1. Videos inside known extras folders (Featurettes/, Extras/, etc.) are
+///    excluded from the count — they're bonus content, not episodes.
+/// 2. If only one non-extras video remains, it's a Movie.
+/// 3. If multiple non-extras videos remain, check whether any have episode
+///    patterns (S01E01). If at least one does, it's a Show. Otherwise it's
+///    a Movie (the largest file), since the extras just weren't in a
+///    subfolder.
 fn classify_subfolder(dir: &Path) -> SubfolderKind {
-    // Collect all video files at any depth inside `dir`.
     let videos = collect_videos_recursive(dir);
 
-    match videos.len() {
+    let main_videos: Vec<&PathBuf> = videos
+        .iter()
+        .filter(|v| !is_inside_extras_folder(v, dir))
+        .collect();
+
+    match main_videos.len() {
         0 => SubfolderKind::Empty,
-        1 => SubfolderKind::Movie(videos.into_iter().next().unwrap()),
-        _ => SubfolderKind::Show,
+        1 => SubfolderKind::Movie(main_videos[0].clone()),
+        _ => {
+            let has_episodes = main_videos.iter().any(|v| {
+                let stem = stem_title(v);
+                let parsed = parse_episode(&stem);
+                parsed.episode_num > 0
+            });
+
+            if has_episodes {
+                SubfolderKind::Show
+            } else {
+                // No episode patterns — treat as movie with extras.
+                // Pick the largest file as the main feature.
+                let largest = main_videos
+                    .iter()
+                    .max_by_key(|v| fs::metadata(v).map(|m| m.len()).unwrap_or(0))
+                    .unwrap();
+                SubfolderKind::Movie((*largest).clone())
+            }
+        }
     }
+}
+
+/// Check whether a video path sits inside a known extras subfolder relative
+/// to the entry's base directory.
+fn is_inside_extras_folder(video: &Path, base: &Path) -> bool {
+    let Ok(relative) = video.strip_prefix(base) else {
+        return false;
+    };
+    for component in relative.parent().iter().flat_map(|p| p.components()) {
+        let name = component.as_os_str().to_string_lossy();
+        if is_extras_folder(&name) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Recursively collect all video file paths under `dir`.
@@ -203,6 +279,15 @@ fn build_seasons(dir: &Path) -> Vec<Season> {
     });
 
     for subdir in subdirs {
+        // Skip known extras/bonus-content folders.
+        let folder_name = subdir
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
+        if is_extras_folder(&folder_name) {
+            continue;
+        }
+
         let mut vids = collect_videos_direct(&subdir);
         if vids.is_empty() {
             continue;
