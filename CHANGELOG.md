@@ -2,7 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
-## [unreleased]
+## [0.1.5] - 2026-04-19
+
+### Features
+
+- Add lazy subtitle loading with sidecar cache
+
+Subtitle extraction (MKV parsing) no longer runs during scan_library(),
+which caused long hangs on libraries with many MKV files. Subtitles are
+now loaded on-demand when a detail view is opened, with results cached
+to .media.subtitles.toml sidecar files for instant subsequent loads.
+
+- GUI: background thread loads subtitles when detail panel opens,
+  with loading indicator while in progress
+- TUI: inline loading on detail screen open
+- CLI: subs/get/fetch-subs commands load before accessing subtitle data
+- Cache invalidates automatically when video file mtime changes
+
+## [0.1.4] - 2026-03-08
+
+### Documentation
+
+- Bump all crates to v0.1.4 and update changelog
+
+Add subtitle detection and fetching to features list, update roadmap,
+add OpenSubtitles API key docs, add matroska to acknowledgements.
 
 ### Features
 
@@ -20,7 +44,6 @@ Uses file hash matching with title+year fallback for accurate results.
 - gui: Fetch Subtitles button in movie and show detail panels with background
   thread downloading; OpenSubtitles API key field in Settings; clear status
   on entry switch
-
 - Add subtitle detection for embedded MKV tracks and external files
 
 Detect embedded subtitle tracks in MKV/WebM containers using the
@@ -37,7 +60,6 @@ crate and scan for external subtitle files (.srt, .ass, .ssa, .sub,
 - gui: collapsible subtitle section for movies (collapsed by default),
   per-episode subtitle count badge for shows
 
-
 ## [0.1.3] - 2026-03-08
 
 ### Documentation
@@ -51,7 +73,6 @@ crate and scan for external subtitle files (.srt, .ass, .ssa, .sub,
   show Linux config path
 - Bump all four crates from 0.1.2 to 0.1.3
 - Update changelog for v0.1.3
-
 
 ### Updates
 
@@ -70,13 +91,11 @@ Now the scanner:
 - Filters extras folders from season building so they don't appear
   as phantom seasons
 
-
 ## [0.1.2] - 2026-03-08
 
 ### Features
 
 - Add release workflow for automated binary distribution
-
 
 ## [0.1.1] - 2026-03-08
 
@@ -92,7 +111,6 @@ clippy:
   change &mut Vec to &mut [_] in render_movie_detail / render_show_detail
 
 fmt: reformat all crates to rustfmt style
-
 - Fix all compiler warnings
 
 - Remove unused ListState import in detail.rs
@@ -102,22 +120,18 @@ fmt: reformat all crates to rustfmt style
 - Add '_ to items_slice vis parameter for clarity
 - Add #[allow(dead_code)] to PosterLoaded.base_dir field (keyed by poster_path intentionally)
 - Add #[allow(dead_code)] to ensure_poster, open_detail, find_movie_mut, find_show_mut (planned helpers)
-
 - Rename binaries to mediavault-cli and mediavault-tui
 
 Rename mv to mediavault-cli and mvt to mediavault-tui to avoid
 shadowing Unix mv command and to follow consistent naming. Fix CLI
 package name from mediavault to media_cli to avoid Cargo collision
 with the GUI crate. Update all help text and hint messages.
-
 - Update sidecar.rs to fix comments path inconsistency
 
 Remove load_comments/save_comments (base_dir variants) and unused
 comments_path_dir/comments_path_video helpers. All callers now use
 MediaEntry::comments_path() with load/save_comments_from/to_path.
-
 - Update main.rs to fix marking of movies as watched
-
 
 ### Documentation
 
@@ -125,37 +139,23 @@ MediaEntry::comments_path() with load/save_comments_from/to_path.
 
 Point all four crates to the workspace root README.md for crates.io
 display. Bump version to 0.1.1 to publish the update.
-
 - Update README.md to add images
 
 ### Features
 
 - Add crates.io version specs and badge for publishing
-
 - Add generated changelog
-
 - Add git-cliff changelog configuration
-
 - Add GitHub Actions CI workflow
-
 - Add package metadata to all workspace crates
-
 - Add MIT license
-
 - Add TestData
-
 - Add media_tui
-
 - Update media_cli to add querying capability for automation
-
 - Add media_cli
-
 - Update tmdb.rs to add optional poster showing and auto mark as watched
-
 - Update main.rs to add more sort options
-
 - Update main.rs to add zoom and tag extraction
-
 
 ### Moves
 
@@ -164,7 +164,6 @@ display. Bump version to 0.1.1 to publish the update.
 Move open_in_player and resolve_library/looks_like_media_dir into
 media_core so all three frontends (GUI, CLI, TUI) share a single
 implementation instead of maintaining separate copies.
-
 
 ### Removals
 
@@ -179,7 +178,6 @@ implementation instead of maintaining separate copies.
 - Remove now-unused Movie and Show imports
 - Simplify poster spawn loop to iterate by index since base_dirs is gone
 
-
 ### Renames
 
 - Rename all crates from media_* to mediavault-* for crates.io publishing
@@ -189,24 +187,16 @@ to mediavault-core, mediavault-gui, mediavault-cli, mediavault-tui
 for consistent naming. Update all source imports, README, CHANGELOG,
 and IDE config.
 
-
 ### Testing
 
 - Update media_cli adn media_core to add tests
 
-
 ### Updates
 
 - Update changelog for v0.1.1 release
-
 - Update README to match project conventions
-
 - Update RustRover meta files
-
 - Update main.rs to update details panel
-
 - Update tmdb.rs for better token recongition
-
 - Update main.rs to redo visual language of the UI interface
-
 
