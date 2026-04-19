@@ -1,25 +1,23 @@
-use crate::fuzzy::{match_entry, parse_ep_spec, print_ambiguous, print_not_found, MatchResult};
+use crate::fuzzy::{match_entry_index, parse_ep_spec};
 use mediavault_core::MediaEntry;
 
 /// Query a single field from an entry. Always prints a bare value — no colour,
 /// no decoration — so output can be used directly in scripts and status bars.
 pub fn run(
-    entries: &[MediaEntry],
+    entries: &mut [MediaEntry],
     query: &str,
     field_or_episode: &str,
     field: Option<&str>,
 ) -> Result<(), String> {
-    let entry = match match_entry(entries, query) {
-        MatchResult::One(e) => e,
-        MatchResult::Many(candidates) => {
-            print_ambiguous(query, &candidates);
-            return Err("ambiguous title".into());
-        }
-        MatchResult::None => {
-            print_not_found(query);
-            return Err("no match".into());
-        }
-    };
+    let idx = match_entry_index(entries, query)?;
+
+    // Only load subtitles if the user is querying subs.
+    let needs_subs = field_or_episode == "subs"
+        || field.map(|f| f == "subs").unwrap_or(false);
+    if needs_subs {
+        mediavault_core::load_entry_subtitles(&mut entries[idx]);
+    }
+    let entry = &entries[idx];
 
     // Determine if field_or_episode is an episode spec (e.g. "s01e04") or a field name.
     // If it parses as an episode spec and a field was provided, it's an episode path query.

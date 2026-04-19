@@ -262,7 +262,7 @@ impl ShowBookmarks {
 // ── Subtitle tracks ──────────────────────────────────────────────────────────
 
 /// A subtitle track embedded in an MKV container.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubtitleTrack {
     /// Track number inside the container.
     pub track_number: u64,
@@ -312,7 +312,7 @@ impl SubtitleTrack {
 }
 
 /// An external subtitle file (e.g. `.srt`, `.sub`, `.ass`) found next to a video.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalSubtitle {
     /// Filename of the subtitle file (e.g. "movie.en.srt").
     pub filename: String,

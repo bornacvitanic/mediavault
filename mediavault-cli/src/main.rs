@@ -320,7 +320,7 @@ fn main() {
         }
     };
 
-    let entries = mediavault_core::scan_library(&library);
+    let mut entries = mediavault_core::scan_library(&library);
 
     let result = match cli.command.unwrap_or(Command::Status { json: false }) {
         Command::Status { json } => commands::status::run(&entries, json),
@@ -368,7 +368,7 @@ fn main() {
             title,
             field_or_episode,
             field,
-        } => commands::get::run(&entries, &title, &field_or_episode, field.as_deref()),
+        } => commands::get::run(&mut entries, &title, &field_or_episode, field.as_deref()),
         Command::IsWatched {
             title,
             episode,
@@ -382,14 +382,14 @@ fn main() {
             list,
             auto,
         } => commands::fetch_subs::run(
-            &entries,
+            &mut entries,
             &title,
             episode.as_deref(),
             &lang,
             list,
             auto,
         ),
-        Command::Subs { title, json } => commands::subs::run(&entries, &title, json),
+        Command::Subs { title, json } => commands::subs::run(&mut entries, &title, json),
     };
 
     if let Err(e) = result {

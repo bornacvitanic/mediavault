@@ -1,11 +1,11 @@
-use crate::fuzzy::{match_entry, parse_ep_spec, print_ambiguous, print_not_found, MatchResult};
+use crate::fuzzy::{match_entry_index, parse_ep_spec};
 use crate::output::Style;
 use mediavault_core::opensubtitles::{download_subtitle, search_subtitles, SubtitleResult};
 use mediavault_core::tmdb::load_config;
 use mediavault_core::MediaEntry;
 
 pub fn run(
-    entries: &[MediaEntry],
+    entries: &mut [MediaEntry],
     query: &str,
     episode: Option<&str>,
     language: &str,
@@ -23,17 +23,10 @@ pub fn run(
     }
     let api_key = &config.opensubtitles_api_key;
 
-    let entry = match match_entry(entries, query) {
-        MatchResult::One(e) => e,
-        MatchResult::Many(candidates) => {
-            print_ambiguous(query, &candidates);
-            return Err("ambiguous title".into());
-        }
-        MatchResult::None => {
-            print_not_found(query);
-            return Err("no match".into());
-        }
-    };
+    let idx = match_entry_index(entries, query)?;
+    // Load subtitles so we can check which episodes already have subs.
+    mediavault_core::load_entry_subtitles(&mut entries[idx]);
+    let entry = &entries[idx];
 
     let st = Style::new();
     let meta = entry.metadata();

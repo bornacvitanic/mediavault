@@ -61,6 +61,17 @@ struct SubFetchResult {
     result: Result<String, String>, // Ok(filename) or Err(message)
 }
 
+/// Message sent from a background subtitle-load thread back to the UI.
+/// Carries lazily-extracted subtitle data for an entire entry (all its videos).
+struct SubtitleLoadResult {
+    poster_path: PathBuf,
+    videos: Vec<(
+        PathBuf,
+        Vec<mediavault_core::models::SubtitleTrack>,
+        Vec<mediavault_core::models::ExternalSubtitle>,
+    )>,
+}
+
 // ── Sort / filter state ───────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq)]
@@ -132,10 +143,18 @@ struct App {
     /// don't re-spawn threads on every frame.
     poster_attempted: std::collections::HashSet<PathBuf>,
 
-    // Subtitle fetch channel
+    // Subtitle fetch channel (user-initiated OpenSubtitles downloads)
     sub_rx: Receiver<SubFetchResult>,
     sub_tx: Sender<SubFetchResult>,
     sub_status: Option<String>,
+
+    // Lazy subtitle loading channel (background MKV parsing on detail open)
+    sub_load_rx: Receiver<SubtitleLoadResult>,
+    sub_load_tx: Sender<SubtitleLoadResult>,
+    /// Poster paths of entries whose subtitles have been queued for loading.
+    subs_queued: std::collections::HashSet<PathBuf>,
+    /// Poster paths of entries whose subtitles have finished loading.
+    subs_ready: std::collections::HashSet<PathBuf>,
 
     // Card zoom (1.0 = default size)
     card_zoom: f32,
@@ -156,6 +175,7 @@ impl App {
     fn new(cc: &eframe::CreationContext) -> Self {
         let (poster_tx, poster_rx) = unbounded();
         let (sub_tx, sub_rx) = unbounded();
+        let (sub_load_tx, sub_load_rx) = unbounded();
         let mut config = load_config();
         let api_key_buf = config.tmdb_api_key.clone();
         let os_api_key_buf = config.opensubtitles_api_key.clone();
@@ -197,6 +217,10 @@ impl App {
             sub_rx,
             sub_tx,
             sub_status: None,
+            sub_load_rx,
+            sub_load_tx,
+            subs_queued: Default::default(),
+            subs_ready: Default::default(),
             card_zoom,
             focused_idx: None,
             is_maximized: false,
@@ -212,6 +236,8 @@ impl App {
             self.entries = scan_library(root);
             self.textures.clear();
             self.poster_attempted.clear();
+            self.subs_queued.clear();
+            self.subs_ready.clear();
             self.detail = DetailPanel::None;
         }
     }
@@ -281,6 +307,76 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Drain the subtitle-load channel and apply lazily-extracted subtitle data
+    /// back onto the corresponding entries.
+    fn poll_subtitle_loads(&mut self) {
+        while let Ok(msg) = self.sub_load_rx.try_recv() {
+            self.subs_ready.insert(msg.poster_path.clone());
+            for (video_path, embedded, external) in &msg.videos {
+                for entry in &mut self.entries {
+                    match entry {
+                        MediaEntry::Movie(m) if m.video_path == *video_path => {
+                            m.subtitles = embedded.clone();
+                            m.external_subs = external.clone();
+                        }
+                        MediaEntry::Show(s) => {
+                            for season in &mut s.seasons {
+                                for ep in &mut season.episodes {
+                                    if ep.video_path == *video_path {
+                                        ep.subtitles = embedded.clone();
+                                        ep.external_subs = external.clone();
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    /// Spawn a single background thread to load subtitle data for all videos
+    /// in an entry. No-op if subtitles were already queued for this entry.
+    fn spawn_subtitle_load(&mut self, poster_path: &Path, ctx: &egui::Context) {
+        if self.subs_queued.contains(poster_path) {
+            return;
+        }
+        self.subs_queued.insert(poster_path.to_path_buf());
+
+        // Collect video paths that need subtitle loading.
+        let video_paths: Vec<PathBuf> = self
+            .entries
+            .iter()
+            .find(|e| e.poster_cache_path() == poster_path)
+            .map(|entry| match entry {
+                MediaEntry::Movie(m) => vec![m.video_path.clone()],
+                MediaEntry::Show(s) => s
+                    .all_episodes()
+                    .map(|ep| ep.video_path.clone())
+                    .collect(),
+            })
+            .unwrap_or_default();
+
+        let tx = self.sub_load_tx.clone();
+        let ctx2 = ctx.clone();
+        let poster = poster_path.to_path_buf();
+        thread::spawn(move || {
+            let videos: Vec<_> = video_paths
+                .into_iter()
+                .map(|vp| {
+                    let (embedded, external) = mediavault_core::load_video_subtitles(&vp);
+                    (vp, embedded, external)
+                })
+                .collect();
+            let _ = tx.send(SubtitleLoadResult {
+                poster_path: poster,
+                videos,
+            });
+            ctx2.request_repaint();
+        });
     }
 
     fn filtered_sorted_indices(&self) -> Vec<usize> {
@@ -366,6 +462,7 @@ impl eframe::App for App {
         self.is_maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
         self.poll_posters(ctx);
         self.poll_subtitle_fetches();
+        self.poll_subtitle_loads();
 
         // ── Top menu bar ──────────────────────────────────────────────────────
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
@@ -522,6 +619,8 @@ impl eframe::App for App {
                         ui.separator();
 
                         let has_os_key = !self.config.opensubtitles_api_key.is_empty();
+                        let subs_loading = self.subs_queued.contains(&detail_key)
+                            && !self.subs_ready.contains(&detail_key);
                         let fetch_req = if detail_is_movie {
                             render_movie_detail(
                                 ui,
@@ -533,6 +632,7 @@ impl eframe::App for App {
                                 &mut self.comment_dirty,
                                 &mut self.sub_status,
                                 has_os_key,
+                                subs_loading,
                             )
                         } else {
                             // For shows, resolve poster_path → base_dir (shows have unique dirs)
@@ -552,6 +652,7 @@ impl eframe::App for App {
                                 &mut self.comment_dirty,
                                 &mut self.sub_status,
                                 has_os_key,
+                                subs_loading,
                             )
                         };
                         if fetch_req.is_some() {
@@ -741,10 +842,11 @@ impl eframe::App for App {
                             self.comment_dirty = false;
                             self.sub_status = None;
                             self.detail = if is_movie {
-                                DetailPanel::Movie(poster)
+                                DetailPanel::Movie(poster.clone())
                             } else {
-                                DetailPanel::Show(poster)
+                                DetailPanel::Show(poster.clone())
                             };
+                            self.spawn_subtitle_load(&poster, ctx);
                         }
                     }
                 }
@@ -928,6 +1030,7 @@ impl eframe::App for App {
                                 } else {
                                     DetailPanel::Show(poster_path.clone())
                                 };
+                                self.spawn_subtitle_load(poster_path, ctx);
                                 // Clear keyboard focus so mouse and keys don't
                                 // show two simultaneous selections.
                                 self.focused_idx = None;
@@ -1255,6 +1358,7 @@ struct SubFetchRequest {
     episode: Option<u32>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_movie_detail(
     ui: &mut egui::Ui,
     poster_key: &Path, // unique per movie — used to look up the correct entry
@@ -1265,6 +1369,7 @@ fn render_movie_detail(
     comment_dirty: &mut bool,
     sub_status: &mut Option<String>,
     has_os_key: bool,
+    subs_loading: bool,
 ) -> Option<SubFetchRequest> {
     let movie = match entries.iter_mut().find_map(|e| {
         if let MediaEntry::Movie(m) = e {
@@ -1327,14 +1432,18 @@ fn render_movie_detail(
     // ── Subtitles ──────────────────────────────────────────────────────────────
     {
         let total = movie.subtitles.len() + movie.external_subs.len();
-        let header = if total > 0 {
+        let header = if subs_loading {
+            "Subtitles: loading...".to_string()
+        } else if total > 0 {
             format!("Subtitles ({total})")
         } else {
             "Subtitles: none".to_string()
         };
         let header_text = egui::RichText::new(header)
             .size(11.0)
-            .color(if total > 0 {
+            .color(if subs_loading {
+                egui::Color32::from_rgb(200, 200, 100)
+            } else if total > 0 {
                 egui::Color32::from_rgb(180, 130, 220)
             } else {
                 egui::Color32::from_gray(100)
@@ -1453,6 +1562,7 @@ fn render_movie_detail(
     fetch_request
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_show_detail(
     ui: &mut egui::Ui,
     base_dir: &Path,
@@ -1463,6 +1573,7 @@ fn render_show_detail(
     comment_dirty: &mut bool,
     sub_status: &mut Option<String>,
     has_os_key: bool,
+    subs_loading: bool,
 ) -> Option<SubFetchRequest> {
     // ── Collect display data (immutable borrow) ───────────────────────────────
     let (poster_key, heading, tags, watched_count, total, next_path, seasons_data) = {
@@ -1760,6 +1871,12 @@ fn render_show_detail(
                                 egui::RichText::new(format!("{}sub", sub_count))
                                     .size(9.0)
                                     .color(egui::Color32::from_rgb(180, 130, 220)),
+                            );
+                        } else if subs_loading {
+                            ui.label(
+                                egui::RichText::new("...")
+                                    .size(9.0)
+                                    .color(egui::Color32::from_rgb(200, 200, 100)),
                             );
                         }
 

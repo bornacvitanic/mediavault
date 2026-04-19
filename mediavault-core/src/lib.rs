@@ -15,4 +15,6 @@ pub use sidecar::{
     load_comments_from_path, load_movie_state, load_show_bookmarks, save_comments_to_path,
     save_movie_state, save_show_bookmarks,
 };
-pub use subtitles::{extract_subtitle_tracks, find_external_subtitles};
+pub use subtitles::{
+    extract_subtitle_tracks, find_external_subtitles, load_entry_subtitles, load_video_subtitles,
+};

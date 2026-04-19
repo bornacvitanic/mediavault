@@ -1,19 +1,11 @@
-use crate::fuzzy::{match_entry, print_ambiguous, print_not_found, MatchResult};
+use crate::fuzzy::match_entry_index;
 use crate::output::Style;
 use mediavault_core::MediaEntry;
 
-pub fn run(entries: &[MediaEntry], query: &str, json: bool) -> Result<(), String> {
-    let entry = match match_entry(entries, query) {
-        MatchResult::One(e) => e,
-        MatchResult::Many(candidates) => {
-            print_ambiguous(query, &candidates);
-            return Err("ambiguous title".into());
-        }
-        MatchResult::None => {
-            print_not_found(query);
-            return Err("no match".into());
-        }
-    };
+pub fn run(entries: &mut [MediaEntry], query: &str, json: bool) -> Result<(), String> {
+    let idx = match_entry_index(entries, query)?;
+    mediavault_core::load_entry_subtitles(&mut entries[idx]);
+    let entry = &entries[idx];
 
     if json {
         return run_json(entry);

@@ -1,8 +1,127 @@
 use std::path::Path;
 
-use crate::models::{ExternalSubtitle, SubtitleTrack};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+use crate::models::{ExternalSubtitle, MediaEntry, SubtitleTrack};
 
 const SUBTITLE_EXTENSIONS: &[&str] = &["srt", "ass", "ssa", "sub", "idx", "vtt"];
+
+// ── Sidecar cache ────────────────────────────────────────────────────────────
+
+/// Cached subtitle data written to `{video_stem}.media.subtitles.toml`.
+#[derive(Debug, Serialize, Deserialize)]
+struct SubtitleCache {
+    /// mtime of the video file when the cache was written.
+    /// If the video file's mtime has changed, the cache is stale.
+    video_mtime: DateTime<Utc>,
+    #[serde(default)]
+    embedded: Vec<SubtitleTrack>,
+    #[serde(default)]
+    external: Vec<ExternalSubtitle>,
+}
+
+fn subtitle_cache_path(video_path: &Path) -> std::path::PathBuf {
+    let stem = video_path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy();
+    let dir = video_path.parent().unwrap_or(Path::new("."));
+    dir.join(format!("{stem}.media.subtitles.toml"))
+}
+
+fn video_mtime(video_path: &Path) -> Option<DateTime<Utc>> {
+    std::fs::metadata(video_path)
+        .ok()?
+        .modified()
+        .ok()
+        .map(|t| t.into())
+}
+
+/// Try to load cached subtitle data. Returns `None` if the cache is missing,
+/// unreadable, or stale (video mtime changed).
+fn load_subtitle_cache(video_path: &Path) -> Option<SubtitleCache> {
+    let cache_path = subtitle_cache_path(video_path);
+    let raw = std::fs::read_to_string(&cache_path).ok()?;
+    let cache: SubtitleCache = toml::from_str(&raw).ok()?;
+
+    // Invalidate if video file mtime has changed.
+    let current_mtime = video_mtime(video_path)?;
+    if cache.video_mtime != current_mtime {
+        return None;
+    }
+    Some(cache)
+}
+
+/// Write subtitle data to the sidecar cache file.
+fn save_subtitle_cache(
+    video_path: &Path,
+    embedded: &[SubtitleTrack],
+    external: &[ExternalSubtitle],
+) {
+    let Some(mtime) = video_mtime(video_path) else {
+        return;
+    };
+    let cache = SubtitleCache {
+        video_mtime: mtime,
+        embedded: embedded.to_vec(),
+        external: external.to_vec(),
+    };
+    let Ok(raw) = toml::to_string_pretty(&cache) else {
+        return;
+    };
+    let content = format!(
+        "# MediaVault — cached subtitle data\n\
+         # Auto-generated from video scan. Delete to force re-scan.\n\n\
+         {raw}"
+    );
+    let _ = std::fs::write(subtitle_cache_path(video_path), content);
+}
+
+// ── Lazy loading (public API) ────────────────────────────────────────────────
+
+/// Load subtitles for a single video file, using the sidecar cache when
+/// available and falling back to MKV parsing + external file scan.
+///
+/// Returns `(embedded, external)`.
+pub fn load_video_subtitles(video_path: &Path) -> (Vec<SubtitleTrack>, Vec<ExternalSubtitle>) {
+    // Try cache first.
+    if let Some(cached) = load_subtitle_cache(video_path) {
+        return (cached.embedded, cached.external);
+    }
+
+    // Cache miss — extract fresh data.
+    let embedded = extract_subtitle_tracks(video_path);
+    let external = find_external_subtitles(video_path);
+
+    // Write cache for next time.
+    save_subtitle_cache(video_path, &embedded, &external);
+
+    (embedded, external)
+}
+
+/// Load subtitles for a `MediaEntry`, populating the subtitle fields on all
+/// contained video files (single movie or all episodes in a show).
+pub fn load_entry_subtitles(entry: &mut MediaEntry) {
+    match entry {
+        MediaEntry::Movie(m) => {
+            let (embedded, external) = load_video_subtitles(&m.video_path);
+            m.subtitles = embedded;
+            m.external_subs = external;
+        }
+        MediaEntry::Show(s) => {
+            for season in &mut s.seasons {
+                for ep in &mut season.episodes {
+                    let (embedded, external) = load_video_subtitles(&ep.video_path);
+                    ep.subtitles = embedded;
+                    ep.external_subs = external;
+                }
+            }
+        }
+    }
+}
+
+// ── MKV extraction ───────────────────────────────────────────────────────────
 
 /// Extract subtitle track metadata from an MKV file.
 /// Returns an empty Vec for non-MKV files or on any read error.
@@ -40,6 +159,8 @@ pub fn extract_subtitle_tracks(video_path: &Path) -> Vec<SubtitleTrack> {
         })
         .collect()
 }
+
+// ── External subtitle scan ───────────────────────────────────────────────────
 
 /// Find external subtitle files next to a video file.
 ///

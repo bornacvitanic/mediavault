@@ -6,6 +6,38 @@ pub enum MatchResult<'a> {
     None,
 }
 
+/// Like `match_entry`, but returns the index into `entries` on a unique match.
+/// Used by commands that need mutable access to the matched entry.
+pub fn match_entry_index(entries: &[MediaEntry], query: &str) -> Result<usize, String> {
+    let q = query.to_lowercase();
+    let mut scored: Vec<(u8, usize)> = entries
+        .iter()
+        .enumerate()
+        .filter_map(|(i, e)| score(e, &q).map(|s| (s, i)))
+        .collect();
+
+    if scored.is_empty() {
+        print_not_found(query);
+        return Err("no match".into());
+    }
+
+    scored.sort_by_key(|(s, _)| *s);
+    let best_score = scored[0].0;
+    let best: Vec<usize> = scored
+        .iter()
+        .filter(|(s, _)| *s == best_score)
+        .map(|(_, i)| *i)
+        .collect();
+
+    if best.len() == 1 {
+        Ok(best[0])
+    } else {
+        let refs: Vec<&MediaEntry> = best.iter().map(|&i| &entries[i]).collect();
+        print_ambiguous(query, &refs);
+        Err("ambiguous title".into())
+    }
+}
+
 /// Fuzzy-match a partial query against the library.
 ///
 /// Scoring (first match wins):

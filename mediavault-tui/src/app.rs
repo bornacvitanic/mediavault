@@ -358,9 +358,11 @@ impl App {
     }
 
     fn open_detail(&mut self) {
-        if self.selected_entry().is_none() {
+        let Some(idx) = self.selected_entry_index() else {
             return;
-        }
+        };
+        // Lazily load subtitle data for the selected entry before showing detail.
+        mediavault_core::load_entry_subtitles(&mut self.entries[idx]);
         self.detail_ep_selected = 0;
         self.detail_ep_scroll = 0;
         self.screen = Screen::Detail;
